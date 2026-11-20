@@ -1375,7 +1375,7 @@ def tg_listener():
                                 tps_p = h.get("tp", [])
                                 card_p = (
                                     f"{h.get('mode', '🚀 PUMP/DUMP')} — <b>{h['symbol']} ({h['side']})</b>\n"
-                                    f"🎯 Szansa: <b>{h['win_prob']}%</b> | 🧬 <i>{h['alpha_tag']}</i>\n"
+                                    f"🎯 Szansa: <b>{h['win_prob']}%</b> | 🧬 <i>{h['alpha_tag']}</i>\n📐 <b>Wzorzec:</b> {h.get('pattern_fit', '-')}\n📖 <b>Rozwoj sytuacji:</b> <i>{h.get('narrative', '-')}</i>\n"
                                     f"💵 Cena: <code>{h['price']}</code> | 🛑 SL: <code>{h['stop']}</code>\n"
                                     f"✅ TP1: <code>{tps_p.__getitem__(0)}</code> | 💰 TP2: <code>{tps_p.__getitem__(1)}</code> | 🏆 TP3: <code>{tps_p.__getitem__(2)}</code>"
                                 )

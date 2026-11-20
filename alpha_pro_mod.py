@@ -303,6 +303,8 @@ def scan_macro_pump_dump_coin(sym):
                 "symbol": sym, "side": "LONG", "mode": "🚀 WZORZEC 1: WYBICIE Z BAZY",
                 "win_prob": min(84, int(62 + vol_mult_1d * 2)),
                 "alpha_tag": f"BAZA +{pump_from_low:.0f}% | VOL {vol_mult_1d:.1f}x",
+                "pattern_fit": "Archetyp BLZ / LOOM (Wczesna akumulacja + skok wolumenu na 1D)",
+                "narrative": f"Kurs wybil z wielodniowej konsolidacji (+{pump_from_low:.0f}% od dolka) przy {vol_mult_1d:.1f}-krotnym wzroscie wolumenu i utrzymuje wsparcie MA7/MA25 na 4H. Oczekiwana kontynuacja fali wzrostowej przed wejsciem tlumu FOMO.",
                 "price": cur, "entry": cur, "stop": sl,
                 "tp": [round(cur + sd * m, 6) for m in (1.5, 2.5, 4.0, 6.0, 10.0)]
             }
@@ -319,6 +321,8 @@ def scan_macro_pump_dump_coin(sym):
                     "symbol": sym, "side": "SHORT", "mode": "🩸 WZORZEC 2: BLOW-OFF TOP (SQUEEZE)",
                     "win_prob": min(87, int(66 + min(16, wick_drop_4h))),
                     "alpha_tag": f"RAJD +{max_pump_14d:.0f}% | KNOT -{wick_drop_4h:.1f}%",
+                    "pattern_fit": "Archetyp TRB / CYBER (Wyczerpanie Short-Squeeze i dlugi gorny knot)",
+                    "narrative": f"Po pionowym rajdzie +{max_pump_14d:.0f}% pojawilo sie silne odrzucenie szczytu (-{wick_drop_4h:.1f}% od knota) i zamkniecie pod MA7 (4H). Paliwo z likwidacji shortow wygaslo — mozliwa szybka korekta w strone sredniej MA25.",
                     "price": cur, "entry": cur, "stop": sl,
                     "tp": [round(cur - sd * m, 6) for m in (1.5, 2.5, 4.0, 6.0, 10.0)]
                 }
@@ -331,6 +335,8 @@ def scan_macro_pump_dump_coin(sym):
                 "symbol": sym, "side": "SHORT", "mode": "🩸 WZORZEC 3: PARABOLIC RUG BLEED",
                 "win_prob": min(85, int(64 + min(15, max_pump_14d / 20))),
                 "alpha_tag": f"SZCZYT +{max_pump_14d:.0f}% | SPADEK -{drop_from_peak:.0f}%",
+                "pattern_fit": "Archetyp RAVE / OM (Wielodniowa dystrybucja i utrata MA7/MA25 4H)",
+                "narrative": f"Token po wzroscie +{max_pump_14d:.0f}% stracil juz {drop_from_peak:.0f}% od szczytu i zlamal obie srednie kroczace (MA7 oraz MA25) na 4H. Rozpoczela sie faza stopniowego wykrwawiania popytu i powrotu do bazy.",
                 "price": cur, "entry": cur, "stop": sl,
                 "tp": [round(cur - sd * m, 6) for m in (1.5, 2.5, 4.0, 6.0, 10.0)]
             }
@@ -352,6 +358,8 @@ def scan_macro_pump_dump_coin(sym):
                         "symbol": sym, "side": "SHORT", "mode": "⚡ WZORZEC 4: FLASH PUMP & DUMP (15M)",
                         "win_prob": min(83, int(63 + max_v15)),
                         "alpha_tag": f"IMPULS +{flash_pct:.1f}% | VOL {max_v15:.1f}x",
+                        "pattern_fit": "Archetyp Szybkiej Pompy Grupowej 15M (Skok wolumenu >5.5x + natychmiastowy zrzut)",
+                        "narrative": f"Gwałtowna pompa +{flash_pct:.1f}% na {max_v15:.1f}x wolumenie zostala juz w {int(retrace_15m*100)}% zniesiona przez podaz. Wysokie prawdopodobienstwo pelnego domkniecia szpilki do poziomu wyjscia.",
                         "price": cur, "entry": cur, "stop": sl,
                         "tp": [round(cur - sd * m, 6) for m in (1.5, 2.5, 4.0, 6.0, 10.0)]
                     }
