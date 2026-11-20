@@ -14,7 +14,7 @@ def run_full_self_test():
     t60 = apm.get_cfd_top60_symbols()
     w80 = apm.get_wild_61_160_symbols()
     m60 = apm.get_micro_161_plus_symbols()
-    kl = cp.fetch_klines("BITGET", "BTCUSDT", "15m", 30)
+    kl = cp.fetch_klines("BITGET", "BTCUSDT", "15m", 100)
     if len(t60) < 40 or len(w80) < 30 or len(m60) < 20 or not kl or len(kl.get("c", [])) < 20:
         raise RuntimeError(f"Blad danych API Bitget: TOP60={len(t60)}, Wild={len(w80)}, Micro={len(m60)}")
 
