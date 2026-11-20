@@ -31,14 +31,22 @@
   },
   {
     "ts": "2026-11-20 18:42:37",
-    "status": "UNRESOLVED",
+    "status": "RESOLVED",
     "location": "py_compile.py:150",
-    "error": "PyCompileError: Sorry: IndentationError: unexpected indent (chart_mod.py, line 172)"
+    "error": "PyCompileError: Sorry: IndentationError: unexpected indent (chart_mod.py, line 172)",
+    "fixed_at": "2026-11-20 18:43:42"
   },
   {
     "ts": "2026-11-20 18:43:16",
-    "status": "UNRESOLVED",
+    "status": "RESOLVED",
     "location": "py_compile.py:150",
-    "error": "PyCompileError: Sorry: IndentationError: unexpected indent (chart_mod.py, line 173)"
+    "error": "PyCompileError: Sorry: IndentationError: unexpected indent (chart_mod.py, line 173)",
+    "fixed_at": "2026-11-20 18:43:42"
+  },
+  {
+    "ts": "2026-11-20 18:43:42",
+    "status": "PASS",
+    "summary": "QA 3.0 PASS | Wolne: 835080MB | 8/8 ETAPOW OK | Pule: 60/80/60 | Tuner: 58% | Baza: 135 HIST + 0 LIVE",
+    "fixed_previous": 2
   }
 ]
