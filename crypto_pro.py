@@ -1645,7 +1645,14 @@ def github_auto_sync_loop():
                     py_compile.compile(f, doraise=True)
                 subprocess.run(["git", "add", "*.py", "*.md", ".gitignore"], check=False)
                 subprocess.run(["git", "commit", "-m", f"Live-sync {datetime.now().strftime('%Y-%m-%d %H:%M')}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                subprocess.run(["git", "push", "origin", "main"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                r_p = subprocess.run(["git", "push", "origin", "main"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if r_p.returncode == 0:
+                    ts_u = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    msg_u = f"\n☁️ [GitHub Sync] Ostatni update wyslany: {ts_u}\n"
+                    print(msg_u.strip(), flush=True)
+                    try:
+                        with open("/dev/tty", "w") as tty: tty.write(msg_u)
+                    except Exception: pass
         except Exception:
             pass
 
