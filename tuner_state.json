@@ -1,6 +1,10 @@
 {
   "min_prob": 58,
   "sl_mult": 1.0,
-  "last_tune_ts": 1795186848.769824,
+  "active_tiers": [
+    "PLATINUM",
+    "GOLD"
+  ],
+  "last_tune_ts": 1795189859.8789327,
   "notes": "[20.11 16:00] Brak sygnalow 2h -> obnizono prog z 60% na 58%"
 }

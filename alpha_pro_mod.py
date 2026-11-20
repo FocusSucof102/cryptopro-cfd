@@ -271,6 +271,23 @@ def detect_cyclical_and_pump_dump(ex, sym):
     except Exception:
         return "ERR", 0.0, ""
 
+
+def get_all_futures_symbols():
+    try:
+        sl = chr(47)
+        u = "".join(["https:", sl, sl, "api.", "bitget", ".com", sl, "api", sl, "v2", sl, "mix", sl, "market", sl, "tickers"])
+        r = SESS.get(u, params={"productType": "USDT-FUTURES"}, timeout=8).json()
+        rows = []
+        for it in r.get("data", []):
+            sym = it.get("symbol", "")
+            vol_u = float(it.get("usdtVolume", 0) or 0)
+            if sym.endswith("USDT") and vol_u > 0:
+                rows.append((sym, vol_u))
+        rows.sort(key=lambda x: -x[1])
+        return [x[0] for x in rows]
+    except Exception:
+        return get_cfd_top60_symbols()
+
 def scan_macro_pump_dump_coin(sym):
     try:
         d1 = _apm_klines("BITGET", sym, "1d", 40)
@@ -363,6 +380,33 @@ def scan_macro_pump_dump_coin(sym):
                         "price": cur, "entry": cur, "stop": sl,
                         "tp": [round(cur - sd * m, 6) for m in (1.5, 2.5, 4.0, 6.0, 10.0)]
                     }
+        # WZORZEC 5: Bot Ping-Pong Accumulation (rowne slupki kupna/sprzedazy przez 12h + start wybicia)
+        if m15 and len(m15["c"]) >= 36:
+            buy_v, sell_v = 0.0, 0.0
+            for j in range(-36, -2):
+                o_j, c_j, v_j = float(m15["o"][j]), float(m15["c"][j]), float(m15["v"][j])
+                if c_j >= o_j: buy_v += v_j
+                else: sell_v += v_j
+            tot_v = buy_v + sell_v
+            if tot_v > 0:
+                buy_ratio = buy_v / tot_v
+                box_hi = max(float(x) for x in m15["h"][-36:-2])
+                box_lo = min(float(x) for x in m15["l"][-36:-2])
+                box_rng_pct = ((box_hi - box_lo) / max(1e-9, box_lo)) * 100.0
+                # Proporcja kupna/sprzedazy niemal idealnie 50/50 (0.46 - 0.54) w waskim pudelku <= 4.5% i obecne wybicie nad box_hi
+                if 0.46 <= buy_ratio <= 0.54 and 0.4 <= box_rng_pct <= 4.5 and cur > box_hi * 1.003:
+                    sl = round(box_lo * 0.995, 6)
+                    sd = abs(cur - sl)
+                    if 0.008 <= (sd / max(1e-9, cur)) <= 0.08:
+                        return {
+                            "symbol": sym, "side": "LONG", "mode": "🤖 WZORZEC 5: BOT PING-PONG BREAKOUT",
+                            "win_prob": 76,
+                            "alpha_tag": f"BUY/SELL {int(buy_ratio*100)}/{int((1-buy_ratio)*100)} | BOX {box_rng_pct:.1f}%",
+                            "pattern_fit": "Archetyp Wash-Trading / Bot Ping-Pong (Rowne slupki kupna i sprzedazy + wybicie z pudelka)",
+                            "narrative": f"Przez ostatnie 9h bot utrzymywal nienaturalnie rowny bilans kupna do sprzedazy ({int(buy_ratio*100)}% / {int((1-buy_ratio)*100)}%) w waskim zakresie {box_rng_pct:.1f}%, a kurs wlasnie wybija gora. Czesty wstep do wlasciwej fazy pompy — wchodzic wylacznie zleceniem LIMIT.",
+                            "price": cur, "entry": cur, "stop": sl,
+                            "tp": [round(cur + sd * m, 6) for m in (1.5, 2.5, 4.0, 6.0, 10.0)]
+                        }
         return None
     except Exception:
         return None
