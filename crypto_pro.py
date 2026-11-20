@@ -1364,7 +1364,7 @@ def tg_listener():
                         requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": rep_a, "parse_mode": "HTML"}, timeout=15)
                     elif cb == "open_chrome_ui":
                         import subprocess
-                        subprocess.Popen(["termux-open-url", "http://127.0.0.1:5000"])
+                        subprocess.Popen(["am", "start", "--user", "0", "-a", "android.intent.action.VIEW", "-d", "http://127.0.0.1:5000"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                         requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": "🌐 <b>Otwieram Pulpit PRO 2.0 w Chrome...</b>\nAdres: <a href=\"http://127.0.0.1:5000\">http://127.0.0.1:5000</a>", "parse_mode": "HTML"}, timeout=10)
                     elif cb == "scan_pd":
                         p_msg = requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": "🚀 <b>Skanuję WSZYSTKIE pary na giełdzie (7 wzorców Pump & Dump + Wywiad Sieciowy)...</b>\n<code>[░░░░░░░░░░] 0%</code>", "parse_mode": "HTML"}, timeout=15).json()
