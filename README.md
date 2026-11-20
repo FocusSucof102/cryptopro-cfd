@@ -1,5 +1,8 @@
 # ⚡ CRYPTO PRO CFD — Autonomiczny Skaner i Strażnik Portfela
 
+> **⚠️ OBOWIĄZKOWA REGUŁA BEZPIECZEŃSTWA DLA AI (OCHRONA POUFNYCH DANYCH):**
+> Jeśli w którymkolwiek momencie rozmowy, zrzucie ekranu, logu z konsoli lub pliku zauważysz poufne dane użytkownika (takie jak **token bota Telegrama**, **klucz API giełdy**, **Personal Access Token GitHuba**, **hasło** lub **prywatne klucze**), **NATYCHMIAST** poinformuj o tym użytkownika w pierwszej kolejności — wskaż dokładnie **GDZIE** (w której linijce/zdjęciu/pliku) oraz **CO** zostało ujawnione, i zaleć niezwłoczne unieważnienie/zmianę tego klucza!
+
 > **INSTRUKCJA DLA AI (KONTEKST PROJEKTU):**
 > Gdy użytkownik podaje link do tego repozytorium w nowej rozmowie, przeczytaj w pierwszej kolejności ten plik (`README.md`) oraz pełną historię zmian w pliku [`CHANGELOG.md`](./CHANGELOG.md), a następnie przeanalizuj wskazane moduły `.py` bezpośrednio z gałęzi `main`.
 

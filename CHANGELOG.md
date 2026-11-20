@@ -35,7 +35,7 @@
 
 ## Etap 6: Pełny Rejestr Decyzji i Przerobionych Opcji (Pamięć Projektu)
 ### ✅ Opcje zatwierdzone i działające w systemie:
-1. **Giełda i koszyk par:** Wyłącznie `BITGET USDT-FUTURES` (`TOP-60` par o obrocie dobowym `> 10M$`), walidacja odległości `Entry <-> SL >= 0.35%`.
+1. **Giełda i koszyk par:** Dane API: `BITGET USDT-FUTURES` | Realna gra użytkownika: **`BitBase Futures / CFD`** (`TOP-60` par o obrocie dobowym `> 10M$`), walidacja odległości `Entry <-> SL >= 0.35%`.
 2. **Kierunek handlu (`Smart Dual-Mode`):** Gra `LONG` oraz `SHORT` jednocześnie, z priorytetem dla makro-reżimu Bitcoina (`EMA 200 1H`) oraz warunkowym dopuszczeniem kontr-trendowych odbić przy silnym `RS vs BTC` lub `TTM Squeeze`.
 3. **Szybkość i kalibracja:** Skaner wielowątkowy (`12 wątków`), automatyczny `Auto-Tuner` (obniża próg po 2h ciszy do min. `55%`, zaostrza przy `WR < 42%` i poszerza bufor SL przy serii szpilek), cichy `Puls CFD Live` co 30 minut z bieżącym statusem tunera.
 4. **Karty okazji i Planner:** Pasek zgodności wielointerwałowej `MTF (X/4: 15M | 1H | 4H | 1D)`, procentowa szansa kontynuacji, przyciski `🧮 Plan`, `➕ Obstawiam`, `📈 Wykres`, osobne kopiowanie każdej z 7 wartości (`Wejście`, `SL`, `TP1..TP5`) przez `termux-clipboard-set`.

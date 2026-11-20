@@ -1,3 +1,22 @@
+# ==============================================================================
+# [AI_GUARD_AND_CONTEXT] - OBOWIAZKOWE ZASADY DLA KAZDEGO AI CZYTAJACEGO TEN PLIK:
+# 1. OBOWIAZEK KONTEKSTU: Przed wprowadzeniem jakichkolwiek zmian w kodzie
+#    PRZECZYTAJ pliki README.md oraz CHANGELOG.md z repozytorium GitHub, aby znac
+#    pelna historie projektu, wdrozone mechanizmy i odrzucone pomysly.
+# 2. BEZPIECZENSTWO (SECRET LEAK ALERT): Jesli w rozmowie, logu, pliku lub na zrzucie
+#    ekranu zauwazysz poufne dane (token bota Telegrama, klucz API, token GitHuba, haslo),
+#    NATYCHMIAST ostrzez uzytkownika na samym poczatku odpowiedzi: podaj GDZIE i CO
+#    wycieklo oraz zlec natychmiastowa zmiane/uniewaznienie klucza!
+# 3. ARCHITEKTURA I GIELDY:
+#    - Zrodlo danych/API skanera: wylacznie BITGET USDT-FUTURES (TOP-60 >10M$).
+#    - Platforma gry uzytkownika: BITBASE FUTURES / CFD (uwzgledniac przy prowizjach,
+#      dostepnosci par, dźwigni i minimalnych odleglosciach zlecen!).
+#    - Silnik: Smart Dual-Mode (LONG+SHORT), Auto-Tuner, Audytor 1M (MFE/MAE),
+#      Shadow Market Lab (analiza niskich procentow 45-61% netto po prowizji),
+#      Straznik Portfela 24/7 oraz Radar Aktywnych Pozycji 60s.
+# 4. NIE PRZYWRACAC: Zablokowanych API (BINANCE/BYBIT), 500 niszowych mikrotokentow
+#    ani twardej blokady tylko jednego kierunku handlu.
+# ==============================================================================
 import auto_tuner_mod as atm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 CFD_SNOOZE_UNTIL = 0
@@ -839,7 +858,26 @@ def render_cfd_history_table():
         f"• Szpilki SL (potem TP1): <b>{wicks}</b> | Uciekl zysk (>0.75R): <b>{missed}</b>\n"
         f"• Straty pod prad BTC: <b>{c_btc}</b> | WR dla MTF ≥3/4: <b>{wr_mtf4:.0f}%</b> ({len(mtf4)} poz.)"
     )
-    return f"📊 <b>AUDYT I TELEMETRIA LIVE CFD (KNOTY 1M)</b>\n<pre>" + "\n".join(lines) + "</pre>" + diag
+    # Analiza oplacalnosci nizszych procentow (Shadow Lab + Live) PO ODLICZENIU PROWIZJI CFD (~0.07R na trade)
+    all_samples = list(rows)
+    if os.path.exists(SHADOW_LAB_FILE):
+        try: all_samples.extend(json.load(open(SHADOW_LAB_FILE)))
+        except Exception: pass
+    closed_all = [x for x in all_samples if x.get("closed_final")]
+    b_lines = ["\n🧪 <b>ANALIZA NISKICH PROCENTOW (NETTO PO PROWIZJI CFD):</b>"]
+    for b_name, lo_p, hi_p in [("45-54%", 45, 54), ("55-61%", 55, 61), ("62%+  ", 62, 100)]:
+        sub = [x for x in closed_all if lo_p <= int(x.get("prob", 0)) <= hi_p]
+        if sub:
+            w_sub = sum(1 for x in sub if float(x.get("res_r", 0)) > 0)
+            wr_sub = round(w_sub / len(sub) * 100.0, 1)
+            # Odliczamy realistyczna prowizje CFD (~0.07R na kazda transakcje)
+            net_r = round(sum(float(x.get("res_r", 0)) - 0.07 for x in sub), 2)
+            st_b = "✅ PLUS" if net_r > 0 else "❌ MINUS"
+            b_lines.append(f"• <code>{b_name}</code>: <b>{len(sub)}</b> prob | Szansa WR: <b>{wr_sub}%</b> | Netto: <b>{net_r:+.2f}R</b> ({st_b})")
+        else:
+            open_sub = sum(1 for x in all_samples if not x.get("closed_final") and lo_p <= int(x.get("prob", 0)) <= hi_p)
+            b_lines.append(f"• <code>{b_name}</code>: zbieranie probek... (w toku: <b>{open_sub}</b>)")
+    return f"📊 <b>AUDYT I TELEMETRIA LIVE CFD (KNOTY 1M)</b>\n<pre>" + "\n".join(lines) + "</pre>" + diag + "\n".join(b_lines)
 
 def tg_menu(cid=None, tok=None, notice=""):
     if (not cid or not tok) and os.path.exists(TG_CONFIG_FILE):

@@ -1,4 +1,7 @@
 *.json
+!cfd_live_history.json
+!market_shadow_lab.json
+!tuner_state.json
 *.csv
 *.log
 __pycache__/
