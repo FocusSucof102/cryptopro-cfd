@@ -1768,7 +1768,23 @@ def github_auto_sync_loop():
         except Exception:
             pass
 
+
+def daily_healthcheck_loop():
+    import self_test
+    while True:
+        time.sleep(86400)
+        try:
+            res_msg = self_test.run_full_self_test()
+            tc_h = json.load(open(TG_CONFIG_FILE)) if os.path.exists(TG_CONFIG_FILE) else {}
+            if tc_h.get("token") and tc_h.get("chat_id"):
+                requests.post(tg_url(tc_h["token"].strip(), "sendMessage"), json={"chat_id": tc_h["chat_id"].strip(), "text": f"🩺 <b>RAPORT ZDROWIA SYSTEMU (24H):</b>\n✅ {res_msg}\nWszystkie skanery, laboratoria i eksport GitHub dzialaja bez bledow.", "parse_mode": "HTML", "disable_notification": True}, timeout=15)
+        except Exception as hc_err:
+            tc_h = json.load(open(TG_CONFIG_FILE)) if os.path.exists(TG_CONFIG_FILE) else {}
+            if tc_h.get("token") and tc_h.get("chat_id"):
+                requests.post(tg_url(tc_h["token"].strip(), "sendMessage"), json={"chat_id": tc_h["chat_id"].strip(), "text": f"🚨 <b>ALARM ZDROWIA SYSTEMU (24H):</b>\n❌ Wykryto usterke podczas autotestu: <code>{hc_err}</code>", "parse_mode": "HTML"}, timeout=15)
+
 if __name__ == "__main__":
+    threading.Thread(target=daily_healthcheck_loop, daemon=True).start()
     threading.Thread(target=github_auto_sync_loop, daemon=True).start()
     threading.Thread(target=cfd_live_bg_loop, daemon=True).start()
     threading.Thread(target=fast_active_positions_loop, daemon=True).start()
