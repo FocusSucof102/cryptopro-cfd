@@ -69,29 +69,38 @@ def run_full_self_test():
     return f"8/8 ETAPOW OK | Pule: {len(t60)}/{len(w80)}/{len(m60)} | Tuner: {st['min_prob']}% | Baza: {hist_tot} HIST + {live_tot} LIVE"
 
 if __name__ == "__main__":
-    import shutil, signal, textwrap, time
+    import os, signal, textwrap, time
+
+    def get_cols():
+        try:
+            return os.get_terminal_size().columns
+        except Exception:
+            return 44
 
     def draw_banner(is_ok, text_msg, clear_scr=False):
         G, R, B, X = "\033[1;92m", "\033[1;91m", "\033[1m", "\033[0m"
         col = G if is_ok else R
-        cols = max(36, shutil.get_terminal_size((48, 24)).columns)
+        cols = max(32, get_cols() - 2)
         inner_w = cols - 2
-        title_txt = "SELF-TEST: 8/8 TESTÓW OK!" if is_ok else "SELF-TEST: BŁĄD KRYTYCZNY!"
-        wrapped = textwrap.wrap(text_msg, width=max(20, inner_w - 2)) or [""]
-        top = "╔" + "═" * inner_w + "╗"
-        mid = "╠" + "═" * inner_w + "╣"
-        bot = "╚" + "═" * inner_w + "╝"
-        prefix = "\033[2J\033[H" if clear_scr else "\n"
-        out = [f"{prefix}{col}{top}", f"║{title_txt.center(inner_w)}║", mid]
+        title_txt = "SELF-TEST: 8/8 TESTOW OK!" if is_ok else "SELF-TEST: BLAD KRYTYCZNY!"
+        wrapped = textwrap.wrap(text_msg, width=max(18, inner_w - 2)) or [""]
+        top = "+" + "-" * inner_w + "+"
+        mid = "+" + "-" * inner_w + "+"
+        bot = "+" + "-" * inner_w + "+"
+        lines = []
+        if clear_scr:
+            lines.append("\033[2J\033[H")
+        lines.append(f"{col}{top}")
+        lines.append(f"|{title_txt.center(inner_w)}|")
+        lines.append(mid)
         for ln in wrapped:
-            out.append(f"║ {ln.ljust(inner_w - 2)} ║")
-        out.append(f"{bot}{X}\n")
-        print("\n".join(out), flush=True)
+            lines.append(f"| {ln.ljust(inner_w - 2)} |")
+        lines.append(f"{bot}{X}")
+        print("\n".join(lines) + "\n", flush=True)
 
-    state = {"ok": True, "msg": ""}
+    state = {"ok": True, "msg": "", "resized": False}
     def _on_resize(signum, frame):
-        if state["msg"]:
-            draw_banner(state["ok"], state["msg"], clear_scr=True)
+        state["resized"] = True
 
     if hasattr(signal, "SIGWINCH"):
         signal.signal(signal.SIGWINCH, _on_resize)
@@ -101,8 +110,14 @@ if __name__ == "__main__":
         state["ok"], state["msg"] = True, summary
         draw_banner(True, summary, clear_scr=False)
         if "--watch" in sys.argv:
-            print("🔄 Obróć telefon, aby przetestować skalowanie (Ctrl+C lub 15s aby zakończyć)...")
-            time.sleep(15)
+            print("Obroc telefon (tryb podgladu 15s, Ctrl+C aby wyjsc)...", flush=True)
+            t_end = time.time() + 15
+            while time.time() < t_end:
+                if state["resized"]:
+                    state["resized"] = False
+                    time.sleep(0.18)
+                    draw_banner(state["ok"], state["msg"], clear_scr=True)
+                time.sleep(0.05)
         sys.exit(0)
     except Exception as e:
         state["ok"], state["msg"] = False, f"PRZYCZYNA: {e}"

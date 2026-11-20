@@ -39,7 +39,10 @@ def run_auto_tuner(hist_file="cfd_live_history.json"):
     recent_24h = [r for r in rows if now - int(r.get("ts_epoch", 0)) <= 86400]
     old_prob, reason = st["min_prob"], None
 
-    if len(recent_2h) == 0 and st["min_prob"] > 55:
+    if len(recent_2h) >= 2 and st["min_prob"] < 60:
+        st["min_prob"] = min(60, st["min_prob"] + 2)
+        reason = f"Rynek przyspieszyl ({len(recent_2h)} sygn. w 2h) -> podniesiono prog z {old_prob}% na {st['min_prob']}%"
+    elif len(recent_2h) == 0 and st["min_prob"] > 55:
         st["min_prob"] = max(55, st["min_prob"] - 2)
         reason = f"Brak sygnalow 2h -> obnizono prog z {old_prob}% na {st['min_prob']}%"
     elif len(closed) >= 5:
