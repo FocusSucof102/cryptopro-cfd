@@ -1,6 +1,6 @@
 {
-  "min_prob": 60,
+  "min_prob": 58,
   "sl_mult": 1.0,
-  "last_tune_ts": 1795183037.2199914,
-  "notes": "[20.11 14:57] Brak sygnalow 2h -> obnizono prog z 62% na 60%"
+  "last_tune_ts": 1795186848.769824,
+  "notes": "[20.11 16:00] Brak sygnalow 2h -> obnizono prog z 60% na 58%"
 }
