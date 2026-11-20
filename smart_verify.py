@@ -83,7 +83,8 @@ def run_smart_audit():
     if os.path.exists("bot_bg.log") and os.path.getsize("bot_bg.log") > 2 * 1024 * 1024:
         open("bot_bg.log", "w", encoding="utf-8").writelines(open("bot_bg.log", encoding="utf-8", errors="ignore").readlines()[-500:])
     doc_cnt = 0
-    for fn in REQ_PY + ["README.md", "CHANGELOG.md"]:
+    all_mods = sorted(set(REQ_PY + [f for f in os.listdir(".") if f.endswith("_mod.py")])) # Auto-Discovery
+    for fn in all_mods + ["README.md", "CHANGELOG.md"]:
         if not os.path.exists(fn) or os.path.getsize(fn) < 50: raise RuntimeError(f"Brak/pusty: '{fn}'")
         if fn.endswith(".py"):
             py_compile.compile(fn, doraise=True)

@@ -6,7 +6,7 @@ def calc_shannon_entropy(kl_15m):
         return 0.5, True, "⚛️ Entropia standard"
     c = [float(x) for x in kl_15m["c"][-30:]]
     rets = [(c[i] - c[i-1]) / max(1e-9, c[i-1]) for i in range(1, len(c))]
-    bins = list((0, 0, 0, 0, 0)) [0, 0, 0, 0, 0]
+    bins = list((0, 0, 0, 0, 0))
     for r in rets:
         idx = 0 if r < -0.004 else (1 if r < -0.001 else (2 if r <= 0.001 else (3 if r <= 0.004 else 4)))
         bins[idx] += 1

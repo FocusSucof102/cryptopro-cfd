@@ -1,3 +1,4 @@
+import report_24h_mod as r24
 import os, json, time
 from datetime import datetime
 
@@ -90,5 +91,6 @@ def run_auto_tuner(hist_file="cfd_live_history.json"):
     st["last_tune_ts"] = now
     if reason:
         st["notes"] = f"[{datetime.now().strftime('%d.%m %H:%M')}] {reason}"
+        r24.log_ai_decision("AutoTuner", f"min_prob={st['min_prob']}%, sl_mult={st['sl_mult']}x", reason, st["active_tiers"])
     json.dump(st, open(TUNER_FILE, "w", encoding="utf-8"), indent=2)
     return st, reason

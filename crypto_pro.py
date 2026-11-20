@@ -1,3 +1,5 @@
+import report_24h_mod as r24
+import quant_edge_pro_mod as qep
 import nzt_cortex_mod as nzt
 import meta_brain_mod as mbm
 import quantum_nash_mod as qnm
@@ -966,13 +968,13 @@ def tg_menu(cid=None, tok=None, notice=""):
         [{"text": "⚙️ Warstwy", "callback_data": "chart_layers"}, {"text": "🏆 Symulacja CFD PRO", "callback_data": "demo_pro"}],
         [{"text": "📜 Backtest 2020-26", "callback_data": "bt_menu"}, {"text": "📊 Historia CSV", "callback_data": "csv"}],
         [{"text": "🩺 Diagnoza Konta", "callback_data": "doc_rep"}, {"text": "🚀 Pump & Dump", "callback_data": "scan_pd"}],
-        [{"text": "🎭 Demo Okazji (Podglad Pulpitu)", "callback_data": "demo_preview"}]
+        [{"text": "📊 Raport 24H Teraz", "callback_data": "force_r24"}, {"text": "🎭 Demo Okazji", "callback_data": "demo_preview"}]
     ]}
     head = f"{notice}\n\n" if notice else ""
     txt = f"{head}⚡ <b>PANEL CFD PRO (BITGET FUTURES / CFD)</b>\n{btc_lbl}\n{sess_lbl}\n<i>Gotowy do pracy — wybierz akcje:</i>"
     btc_clean = str(btc_lbl).replace("<", "&lt;").replace(">", "&gt;")
     sess_clean = str(sess_lbl).replace("<", "&lt;").replace(">", "&gt;")
-    txt_safe = f"{head}⚡ <b>PANEL CFD PRO (BITGET FUTURES / CFD)</b>\n{btc_clean}\n{sess_clean}\n<i>Gotowy do pracy — wybierz akcje:</i>"
+    txt_safe = f"{head}⚡ <b>PANEL CFD PRO (BITGET FUTURES / CFD)</b>\n{r24.get_24h_countdown_line()}\n{btc_clean}\n{sess_clean}\n<i>Gotowy do pracy — wybierz akcje:</i>"
     requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": txt_safe, "parse_mode": "HTML", "reply_markup": kb}, timeout=15)
 
 def tg_listener():
@@ -1210,7 +1212,7 @@ def tg_listener():
                                         if sl_m_dyn != 1.0:
                                             td_w = 1 if h["side"] == "LONG" else -1
                                             h["stop"] = round(h["entry"] - td_w * abs(h["entry"] - h["stop"]) * sl_m_dyn, 6)
-                                        ok_ob, ob_b, ob_tag = iom.get_orderflow_and_walls(h["symbol"], h["side"], h["entry"], h["tp"])
+                                        ok_ob, ob_b, ob_tag = iom.get_orderflow_and_walls(h["symbol"], h["side"], h["entry"], h["tp"].__getitem__(0))
                                         sl_k = (abs(h["entry"] - h["stop"]) / max(1e-9, h["entry"])) * 100.0
                                         ok_k, kb, kt = aqm.evaluate_knn_pattern(h["side"], h.get("win_prob", 55), 25, sl_k, datetime.now().hour)
                                         ld, lt = aqm.get_lead_lag_impulse(sys.modules[__name__], h["symbol"])
@@ -1221,9 +1223,20 @@ def tg_listener():
                                         ok_rt, rt_b, rt_tag = fqm.detect_whale_iceberg_and_redteam(h["side"], kl_q)
                                         qw_b, qw_tag = qnm.quantum_wave_interference(h["side"], h["entry"], h["tp"].__getitem__(0), h["stop"], kl_q)
                                         ok_nash, nash_b, nash_tag = qnm.detect_nash_predator_trap(h["side"], kl_q)
+                                        bn_b, bn_tag = qep.check_binance_futures_lead(h["symbol"], h["side"], h["price"])
+                                        sl_fp, fp_b, fp_tag = qep.profile_coin_fingerprint(kl_q)
+                                        ok_tail, soc_b, tail_tag = qep.check_extreme_tail_and_social(h["symbol"], kl_q, [])
+                                        if sl_fp != 1.0: h["stop"] = round(h["entry"] - (h["entry"] - h["stop"]) * sl_fp, 6)
+                                        ai_pts = mbm.apply_brain_weights(ob_b, kb, lb, reg_b, rt_b, qw_b) + nash_b + bn_b + fp_b + soc_b
+                                        h["win_prob"] = max(45, min(96, int(h.get("win_prob", 55)) + ai_pts))
+                                        extra_tags = [x for x in (ob_tag, kt, lt if lb else "", reg_tag, ent_tag, rt_tag, qw_tag, nash_tag, fp_tag, bn_tag if bn_b else "") if x]
+                                        h["alpha_tag"] = " | ".join(([h["alpha_tag"]] if h.get("alpha_tag") else []) + extra_tags)
                                         if not (ok_ob and ok_k and reg_k != "CHOP" and ok_ent and ok_rt and ok_nash):
-                                            nzt.record_rejected_hypothesis(h["symbol"], h["side"], h["entry"], h["stop"], f"{reg_k}|{ent_tag}|{rt_tag}")
-                                        if ok_ob and ok_k and reg_k != "CHOP" and ok_ent and ok_rt and ok_nash and h["symbol"] not in sam.get_bitbase_blacklist() and sdm.check_sniper_quality(h["side"], btc_d, fetch_klines("BITGET", h["symbol"], "15m", 5))[0] and apm.validate_cfd_order(h["entry"], h["stop"], h["price"]) and h.get("win_prob", 0) >= min_p_dyn:
+                                            why_rej = "+".join([nm for flg, nm in ((ok_ob, "OB_WALL"), (ok_k, "KNN"), (reg_k != "CHOP", "CHOP_SHIELD"), (ok_ent, "ENTROPY"), (ok_rt, "RED_TEAM"), (ok_nash, "NASH_TRAP"), (ok_tail, "TAIL_LOCK")) if not flg]) or "SNIPER_FILTER"
+                                            nzt.record_rejected_hypothesis(h["symbol"], h["side"], h["entry"], h["stop"], why_rej)
+                                            for flg, nm in ((ok_ob, "OB_WALL"), (ok_k, "KNN"), (reg_k != "CHOP", "CHOP_SHIELD"), (ok_ent, "ENTROPY"), (ok_rt, "RED_TEAM"), (ok_nash, "NASH_TRAP")):
+                                                if not flg: r24.record_funnel_drop(nm)
+                                        if ok_ob and ok_k and reg_k != "CHOP" and ok_ent and ok_rt and ok_nash and ok_tail and h["symbol"] not in sam.get_bitbase_blacklist() and sdm.check_sniper_quality(h["side"], btc_d, fetch_klines("BITGET", h["symbol"], "15m", 5))[0] and apm.validate_cfd_order(h["entry"], h["stop"], h["price"]) and h.get("win_prob", 0) >= min_p_dyn:
                                             return h
                                     return None
                                 done_c = 0
@@ -1482,6 +1495,8 @@ def tg_listener():
                     elif cb == "clear_cfd_hist":
                         if os.path.exists(CFD_HIST_FILE): os.remove(CFD_HIST_FILE)
                         send_telegram("🗑️ <b>Historia trafien Live CFD zostala wyczyszczona!</b>")
+                    elif cb == "force_r24":
+                        r24.check_and_build_24h_report(sys.modules[__name__], force=True)
                     elif cb == "doc_rep":
                         send_telegram(sdm.run_account_doctor())
                     elif cb == "csv":
@@ -1809,7 +1824,7 @@ def cfd_live_bg_loop():
                             if sl_m_l != 1.0:
                                 td_l = 1 if h["side"] == "LONG" else -1
                                 h["stop"] = round(h["entry"] - td_l * abs(h["entry"] - h["stop"]) * sl_m_l, 6)
-                            ok_ob, ob_b, ob_tag = iom.get_orderflow_and_walls(h["symbol"], h["side"], h["entry"], h["tp"])
+                            ok_ob, ob_b, ob_tag = iom.get_orderflow_and_walls(h["symbol"], h["side"], h["entry"], h["tp"].__getitem__(0))
                             sl_k = (abs(h["entry"] - h["stop"]) / max(1e-9, h["entry"])) * 100.0
                             ok_k, kb, kt = aqm.evaluate_knn_pattern(h["side"], h.get("win_prob", 55), 25, sl_k, datetime.now().hour)
                             ld, lt = aqm.get_lead_lag_impulse(sys.modules[__name__], h["symbol"])
@@ -1820,9 +1835,20 @@ def cfd_live_bg_loop():
                             ok_rt, rt_b, rt_tag = fqm.detect_whale_iceberg_and_redteam(h["side"], kl_q)
                             qw_b, qw_tag = qnm.quantum_wave_interference(h["side"], h["entry"], h["tp"].__getitem__(0), h["stop"], kl_q)
                             ok_nash, nash_b, nash_tag = qnm.detect_nash_predator_trap(h["side"], kl_q)
+                            bn_b, bn_tag = qep.check_binance_futures_lead(h["symbol"], h["side"], h["price"])
+                            sl_fp, fp_b, fp_tag = qep.profile_coin_fingerprint(kl_q)
+                            ok_tail, soc_b, tail_tag = qep.check_extreme_tail_and_social(h["symbol"], kl_q, [])
+                            if sl_fp != 1.0: h["stop"] = round(h["entry"] - (h["entry"] - h["stop"]) * sl_fp, 6)
+                            ai_pts = mbm.apply_brain_weights(ob_b, kb, lb, reg_b, rt_b, qw_b) + nash_b + bn_b + fp_b + soc_b
+                            h["win_prob"] = max(45, min(96, int(h.get("win_prob", 55)) + ai_pts))
+                            extra_tags = [x for x in (ob_tag, kt, lt if lb else "", reg_tag, ent_tag, rt_tag, qw_tag, nash_tag, fp_tag, bn_tag if bn_b else "") if x]
+                            h["alpha_tag"] = " | ".join(([h["alpha_tag"]] if h.get("alpha_tag") else []) + extra_tags)
                             if not (ok_ob and ok_k and reg_k != "CHOP" and ok_ent and ok_rt and ok_nash):
-                                nzt.record_rejected_hypothesis(h["symbol"], h["side"], h["entry"], h["stop"], f"{reg_k}|{ent_tag}|{rt_tag}")
-                            if ok_ob and ok_k and reg_k != "CHOP" and ok_ent and ok_rt and ok_nash and h["symbol"] not in sam.get_bitbase_blacklist() and sdm.check_sniper_quality(h["side"], btc_d, fetch_klines("BITGET", h["symbol"], "15m", 5))[0] and apm.validate_cfd_order(h["entry"], h["stop"], h["price"]) and h.get("win_prob", 0) >= min_p_l:
+                                why_rej = "+".join([nm for flg, nm in ((ok_ob, "OB_WALL"), (ok_k, "KNN"), (reg_k != "CHOP", "CHOP_SHIELD"), (ok_ent, "ENTROPY"), (ok_rt, "RED_TEAM"), (ok_nash, "NASH_TRAP"), (ok_tail, "TAIL_LOCK")) if not flg]) or "SNIPER_FILTER"
+                                nzt.record_rejected_hypothesis(h["symbol"], h["side"], h["entry"], h["stop"], why_rej)
+                                for flg, nm in ((ok_ob, "OB_WALL"), (ok_k, "KNN"), (reg_k != "CHOP", "CHOP_SHIELD"), (ok_ent, "ENTROPY"), (ok_rt, "RED_TEAM"), (ok_nash, "NASH_TRAP")):
+                                    if not flg: r24.record_funnel_drop(nm)
+                            if ok_ob and ok_k and reg_k != "CHOP" and ok_ent and ok_rt and ok_nash and ok_tail and h["symbol"] not in sam.get_bitbase_blacklist() and sdm.check_sniper_quality(h["side"], btc_d, fetch_klines("BITGET", h["symbol"], "15m", 5))[0] and apm.validate_cfd_order(h["entry"], h["stop"], h["price"]) and h.get("win_prob", 0) >= 45:
                                 return h
                     except Exception: pass
                     return None
@@ -1890,7 +1916,7 @@ def cfd_live_bg_loop():
                         tok_h, cid_h = tc_h.get("token", "").strip(), tc_h.get("chat_id", "").strip()
                         if tok_h and cid_h:
                             tp_now = atm.get_tuner_params()
-                            tuner_line = f"\n{nzt.get_nzt_status_line(sys.modules[__name__])}\n{mbm.get_brain_summary_line()}\n🧠 <b>Auto-Tuner (Skan 45-100% | Alerty ≥{tp_now.get('min_prob', 58)}%):</b>\n📊 Poziomy: <code>{atm.get_all_tiers_summary()}</code>"
+                            tuner_line = f"\n{r24.get_24h_countdown_line()}\n{nzt.get_nzt_status_line(sys.modules[__name__])}\n{mbm.get_brain_summary_line()}\n🧠 <b>Auto-Tuner (Skan 45-100% | Alerty ≥{tp_now.get('min_prob', 58)}%):</b>\n📊 Poziomy: <code>{atm.get_all_tiers_summary()}</code>"
                             requests.post(tg_url(tok_h, "sendMessage"), json={"chat_id": cid_h, "text": f"⠀⠀🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥\n⛔ <b>BRAK AKTYWNYCH SYGNAŁÓW</b> ⛔\n⠀⠀🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥\n💓 <b>Puls CFD Live ({datetime.now().strftime('%H:%M')}):</b> Przeskanowano <b>{len(top_cfd)}</b> par | {btc_c} | Brak nowych okazji.{tuner_line}", "parse_mode": "HTML", "disable_notification": True}, timeout=15)
                 cycle_cnt += 1
         except Exception as err:
@@ -1999,6 +2025,7 @@ def github_auto_sync_loop():
     import subprocess, py_compile, glob
     while True:
         wd.beat('github_sync_5m', 'Cykl kontrolny 5m')
+        r24.check_and_build_24h_report(sys.modules[__name__])
         time.sleep(300)
         try:
             st_out = subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()

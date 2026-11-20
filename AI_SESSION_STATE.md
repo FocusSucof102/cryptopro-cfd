@@ -1,5 +1,6 @@
 # 🧠 ŻYWA PAMIĘĆ SESJI AI
-*Aktualizacja: 2026-11-20 21:05:25*
+*Aktualizacja: 2026-11-20 21:19:29*
 
-## 🛡️ AUTO-NADZÓR: Docstring-Guard + QA 5.0 PRO+ + Auto-Repair + Watchdog.
-## 📌 Etap 18 (NZT-48 Cortex — Uczenie Kontrfaktyczne z Każdej Analizy): Wdrożono `nzt_cortex_mod.py`, który rejestruje nawet odrzucone hipotezy, po 60 minutach weryfikuje na rynku czy AI miało rację (Uratowane SL vs Przeoczone okazje) i buduje wskaźnik NZT Cortex IQ.
+## 🛡️ AUTO-NADZÓR + AUTO-DISCOVERY + UPGRADE GATE:
+- Naprawiono 5 cichych bugów przepływu danych (`bins` w Entropii, `tp[0]` w Orderbook Walls, próg `45%` w `_live_w` dla `Shadow Lab` oraz zapisywanie pełnych tagów i punktów `Meta-Brain` do obiektu sygnału).
+- System gotowy do 24-godzinnej autonomicznej pracy i zbierania próbek `LIVE_FORWARD`.
