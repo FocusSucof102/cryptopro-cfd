@@ -25,6 +25,7 @@ SEEN_CFD_SIGS = {}
 SCAN_STOP = False
 import alpha_pro_mod as apm
 import web_pump_radar_mod as wpr
+import contract_audit_mod as cam
 import backtest_2020 as bt20
 import demo_sim_mod as ds24
 import portfolio_mod as pf
@@ -1185,7 +1186,7 @@ def tg_listener():
                                             f"{apm.get_mtf_status_line('BITGET', h['symbol'], h['side'])}\n"
                                             f"{pf.check_new_opportunity_margin(h['side'])}"
                                         )
-                                        kb_m = {"inline_keyboard": [[{"text": f"🧮 Plan ({h['symbol']})", "callback_data": f"plan_{h['symbol']}"}, {"text": "➕ Obstawiam", "callback_data": f"addp_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}]]}
+                                        kb_m = {"inline_keyboard": [[{"text": f"🧮 Plan ({h['symbol']})", "callback_data": f"plan_{h['symbol']}"}, {"text": "➕ Obstawiam", "callback_data": f"addp_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}, {"text": "🛡️ Audyt", "callback_data": f"aud_{h['symbol']}"}]]}
                                         requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": card_m, "parse_mode": "HTML", "reply_markup": kb_m}, timeout=15)
                             except Exception as err:
                                 requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": f"⚠️ Blad skanu CFD: <code>{err}</code>", "parse_mode": "HTML"}, timeout=15)
@@ -1198,7 +1199,7 @@ def tg_listener():
                             hits_sorted = sorted(LATEST["hits"], key=lambda x: (-x.get("win_prob", 0), x["req_cap"]))
                             requests.post(tg_url(tok, "editMessageText"), json={"chat_id": cid, "message_id": mid, "text": f"✅ <b>Gotowe ({ex})!</b> Znaleziono: <b>{len(hits_sorted)}</b> (od najpewniejszej od gory) | W poblizu: <b>{len(LATEST['near'])}</b>", "parse_mode": "HTML"})
                             for idx, h in enumerate(hits_sorted, 1):
-                                kb_h = {"inline_keyboard": [[{"text": "➕ Obstawiam", "callback_data": f"addp_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}, {"text": "🧮 Planner", "callback_data": f"plan_{h['symbol']}"}], [{"text": f"🌐 Otworz {ex} ({h['symbol']})", "url": get_exchange_url(ex, h['symbol'])}]]}
+                                kb_h = {"inline_keyboard": [[{"text": "➕ Obstawiam", "callback_data": f"addp_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}, {"text": "🛡️ Audyt", "callback_data": f"aud_{h['symbol']}"}, {"text": "🧮 Planner", "callback_data": f"plan_{h['symbol']}"}], [{"text": f"🌐 Otworz {ex} ({h['symbol']})", "url": get_exchange_url(ex, h['symbol'])}]]}
                                 send_telegram(format_tg_card(h, ex, f" #{idx}"), kb_h)
                                 time.sleep(0.35)
                             if LATEST["near"]:
@@ -1350,6 +1351,10 @@ def tg_listener():
                         cur_l[lk] = not cur_l.get(lk, True)
                         save_settings(st_l)
                         requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": f"✅ Przelaczono warstwe <b>{lk.upper()}</b> -> <b>{'WLACZONA' if cur_l[lk] else 'WYLACZONA'}</b>", "parse_mode": "HTML"}, timeout=15)
+                    elif cb.startswith("aud_"):
+                        sym_a = cb.replace("aud_", "")
+                        rep_a = cam.audit_token_contract(sym_a)
+                        requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": rep_a, "parse_mode": "HTML"}, timeout=15)
                     elif cb == "scan_pd":
                         p_msg = requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": "🚀 <b>Skanuję WSZYSTKIE pary na giełdzie (7 wzorców Pump & Dump + Wywiad Sieciowy)...</b>\n<code>[░░░░░░░░░░] 0%</code>", "parse_mode": "HTML"}, timeout=15).json()
                         p_mid = p_msg.get("result", {}).get("message_id")
@@ -1379,7 +1384,7 @@ def tg_listener():
                                     f"💵 Cena: <code>{h['price']}</code> | 🛑 SL: <code>{h['stop']}</code>\n"
                                     f"✅ TP1: <code>{tps_p.__getitem__(0)}</code> | 💰 TP2: <code>{tps_p.__getitem__(1)}</code> | 🏆 TP3: <code>{tps_p.__getitem__(2)}</code>"
                                 )
-                                kb_p = {"inline_keyboard": [[{"text": f"🧮 Plan ({h['symbol']})", "callback_data": f"plan_{h['symbol']}"}, {"text": "➕ Obstawiam", "callback_data": f"addp_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}]]}
+                                kb_p = {"inline_keyboard": [[{"text": f"🧮 Plan ({h['symbol']})", "callback_data": f"plan_{h['symbol']}"}, {"text": "➕ Obstawiam", "callback_data": f"addp_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}, {"text": "🛡️ Audyt", "callback_data": f"aud_{h['symbol']}"}]]}
                                 requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": card_p, "parse_mode": "HTML", "reply_markup": kb_p}, timeout=15)
                     elif cb == "clear_cfd_hist":
                         if os.path.exists(CFD_HIST_FILE): os.remove(CFD_HIST_FILE)
@@ -1673,7 +1678,7 @@ def cfd_live_bg_loop():
                                 f"🛑 SL: <code>{h['stop']}</code> | ✅ TP1: <code>{tp1_l}</code> | 💰 TP2: <code>{tp2_l}</code>\n"
                                 f"{apm.get_mtf_status_line('BITGET', h['symbol'], h['side'])}\n{pf.check_new_opportunity_margin(h['side'])}"
                             )
-                            kb_l = {"inline_keyboard": [[{"text": f"🧮 Plan ({h['symbol']})", "callback_data": f"plan_{h['symbol']}"}, {"text": "➕ Obstawiam", "callback_data": f"addp_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}]]}
+                            kb_l = {"inline_keyboard": [[{"text": f"🧮 Plan ({h['symbol']})", "callback_data": f"plan_{h['symbol']}"}, {"text": "➕ Obstawiam", "callback_data": f"addp_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}, {"text": "🛡️ Audyt", "callback_data": f"aud_{h['symbol']}"}]]}
                             requests.post(tg_url(tok_l, "sendMessage"), json={"chat_id": cid_l, "text": card_l, "parse_mode": "HTML", "reply_markup": kb_l}, timeout=15)
                 else:
                     # Co 2 cykle (co 30 min) wysylamy cichy Puls Zycia, zeby bylo wiadomo ze radar CFD pracuje
