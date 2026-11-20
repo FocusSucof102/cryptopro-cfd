@@ -724,6 +724,7 @@ def audit_cfd_history_1m():
     changed = False
     now_ep = int(time.time())
     for r in rows:
+        if r.get("closed_final"): continue
         en = float(r.get("en_f") or r.get("entry") or 0)
         sl = float(r.get("sl_f") or r.get("sl") or 0)
         if en <= 0 or sl <= 0: continue
@@ -736,7 +737,9 @@ def audit_cfd_history_1m():
         t0 = int(r.get("ts_epoch") or (now_ep - 3600))
         # Pobieramy swiece 1-minutowe (1m) pokrywajace czas od wykrycia sygnalu (max 1000 min = ~16.5h na 1 zapytanie)
         mins_elapsed = max(2, min(990, (now_ep - t0) // 60 + 2))
-        kl1 = fetch_klines("BITGET", r.get("sym", ""), "1m", mins_elapsed)
+        tf_aud = "1m" if (now_ep - t0) <= 58000 else "5m"
+        lim_aud = mins_elapsed if tf_aud == "1m" else min(990, (now_ep - t0) // 300 + 2)
+        kl1 = fetch_klines("BITGET", r.get("sym", ""), tf_aud, lim_aud)
         if not kl1 or len(kl1["c"]) < 2: continue
 
         hit_tp1, hit_tp2 = False, False
@@ -772,7 +775,7 @@ def audit_cfd_history_1m():
 
         dur_m = max(1, (int(kl1["t"].__getitem__(hit_idx) / 1000) - t0) // 60)
         if final_st:
-            r["status"], r["res_r"], r["dur_str"] = final_st, final_r, fmt_dur_mins(dur_m)
+            r["status"], r["res_r"], r["dur_str"], r["closed_final"] = final_st, final_r, fmt_dur_mins(dur_m), True
         else:
             c_last = float(kl1["c"].__getitem__(-1))
             live_r = round((td * (c_last - en)) / sd, 2)
