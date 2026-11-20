@@ -20,6 +20,7 @@
 import os, json, time
 from datetime import datetime
 import crypto_pro as cp
+import smart_sl_mod as ssl
 
 POS_FILE = "active_positions.json"
 
@@ -175,7 +176,8 @@ def check_positions_guardian():
         status_line = " | ".join(threats) if threats else f"🟢 Pozycja stabilna ({struct}, RSI {ta['rsi']})"
         hp = cp.ds24.analyze_hold_potential(ex, sym, side, cur, p["tp"]) if hasattr(cp, "ds24") else {"verdict": "Brak danych", "eta_tp": "?"}
         base_act = " ".join(actions) if actions else "Trzymaj plan — brak zagrozen."
-        action_line = f"{base_act} | ⏱️ Do TP 3R: {hp['eta_tp']} | 🔮 {hp['verdict']}"
+        rec_sl, sl_why = ssl.compute_smart_sl(side, entry, cur, stop, atr_1h, ta["smc"]["bos_hi"], ta["smc"]["bos_lo"], p.get("lev", 10))
+        action_line = f"{base_act} | 🛡️ Proponowany SL: <code>{cp.fmt_p(rec_sl).strip()}</code> ({sl_why}) | ⏱️ Do TP 3R: {hp['eta_tp']}"
         p["live_price"] = cur
         p["live_pnl"] = f"{pnl_pct:+.2f}% ({lev_pnl:+.1f}% z lev)"
         p["live_status"] = status_line
