@@ -20,6 +20,7 @@
 import auto_tuner_mod as atm
 import watchdog_mod as wd
 import session_analytics_mod as sam
+import sniper_doctor_mod as sdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 CFD_SNOOZE_UNTIL = 0
 CFD_LIVE_ACTIVE = True
@@ -45,7 +46,7 @@ CONFIG_FILE, TG_CONFIG_FILE, SETTINGS_FILE, CSV_FILE = "config_live.json", "tg_c
 EXCHANGES = ["BINANCE", "BYBIT", "BITGET", "WEEX", "BITBASE"]
 EX_MAX_DEV = {"BINANCE": 5.0, "BYBIT": 5.0, "BITGET": 5.0, "WEEX": 3.0, "BITBASE": 4.0}
 MAX_LEV, MAX_MARGIN_FRACTION, FEE_SIDE_PCT, SLIPPAGE_BPS = 100, 0.80, 0.05, 2.0
-LEVEL_CANDLES, STOP_ATR, NEAR_ATR, ATR_N, ADX_MIN, VOL_MULT = 48, 1.5, 1.0, 14, 20, 1.5
+LEVEL_CANDLES, STOP_ATR, NEAR_ATR, ATR_N, ADX_MIN, VOL_MULT = 48, 1.8, 1.0, 14, 20, 1.5
 WATCH_EVERY, TIMEOUT = 300, 15
 
 G, R, Y, C, B, W = "\033[92m", "\033[91m", "\033[93m", "\033[96m", "\033[1m", "\033[0m"
@@ -956,7 +957,8 @@ def tg_menu(cid=None, tok=None, notice=""):
         [{"text": "⚡ 🌐 Otwórz Pulpit Chrome (2.0)", "callback_data": "open_chrome_ui"}], [{"text": "⚡ Skanuj CFD (Long/Short)", "callback_data": "scan_cfd10"}, {"text": live_txt, "callback_data": "tgl_cfd_live"}],
         [{"text": "💼 Portfel CFD", "callback_data": "tg_pf"}, {"text": "🧮 Planner", "callback_data": "tg_plan_menu"}, {"text": "📈 Wykresy", "callback_data": "prop_charts"}],
         [{"text": "⚙️ Warstwy", "callback_data": "chart_layers"}, {"text": "🏆 Symulacja CFD PRO", "callback_data": "demo_pro"}],
-        [{"text": "📜 Backtest 2020-2026", "callback_data": "bt_menu"}, {"text": "📊 Historia CSV", "callback_data": "csv"}, {"text": "🚀 Pump & Dump", "callback_data": "scan_pd"}],
+        [{"text": "📜 Backtest 2020-26", "callback_data": "bt_menu"}, {"text": "📊 Historia CSV", "callback_data": "csv"}],
+        [{"text": "🩺 Diagnoza Konta", "callback_data": "doc_rep"}, {"text": "🚀 Pump & Dump", "callback_data": "scan_pd"}],
         [{"text": "🎭 Demo Okazji (Podglad Pulpitu)", "callback_data": "demo_preview"}]
     ]}
     head = f"{notice}\n\n" if notice else ""
@@ -1201,7 +1203,7 @@ def tg_listener():
                                         if sl_m_dyn != 1.0:
                                             td_w = 1 if h["side"] == "LONG" else -1
                                             h["stop"] = round(h["entry"] - td_w * abs(h["entry"] - h["stop"]) * sl_m_dyn, 6)
-                                        if h["symbol"] not in sam.get_bitbase_blacklist() and apm.validate_cfd_order(h["entry"], h["stop"], h["price"]) and h.get("win_prob", 0) >= min_p_dyn:
+                                        if h["symbol"] not in sam.get_bitbase_blacklist() and sdm.check_sniper_quality(h["side"], btc_d, fetch_klines("BITGET", h["symbol"], "15m", 5))[0] and apm.validate_cfd_order(h["entry"], h["stop"], h["price"]) and h.get("win_prob", 0) >= min_p_dyn:
                                             return h
                                     return None
                                 done_c = 0
@@ -1233,7 +1235,7 @@ def tg_listener():
                                     requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": nh_txt, "parse_mode": "HTML", "reply_markup": {"inline_keyboard": [[{"text": "🔄 Skanuj CFD ponownie", "callback_data": "scan_cfd10"}, {"text": "⬅ Menu", "callback_data": "back_menu"}]]}}, timeout=15)
                                 else:
                                     hits.sort(key=lambda x: -x.get("win_prob", 0))
-                                    top3_m = hits.__getitem__(slice(0, 3))
+                                    top3_m = hits.__getitem__(slice(0, 2))
                                     LATEST["hits"] = top3_m
                                     log_cfd_hits_to_file(top3_m, "SKAN")
                                     requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": f"⚡ <b>SYGNALY CFD TOP-60</b> | {btc_cm}\nZnaleziono <b>{len(top3_m)}</b> najlepsze okazje:", "parse_mode": "HTML"}, timeout=15)
@@ -1247,7 +1249,7 @@ def tg_listener():
                                             f"💵 Cena: <code>{h.get('price', h['entry'])}</code> | 🎯 Wejscie: <code>{h['entry']}</code>\n"
                                             f"🛑 SL: <code>{h['stop']}</code> | ✅ TP1: <code>{tp1_m}</code> | 💰 TP2: <code>{tp2_m}</code>\n"
                                             f"{apm.get_mtf_status_line('BITGET', h['symbol'], h['side'])}\n"
-                                            f"{pf.check_new_opportunity_margin(h['side'])}"
+                                            f"{pf.check_new_opportunity_margin(h['side'])}\n{sdm.build_action_instruction(h['symbol'], h['side'], h['entry'], h['stop'], tp1_m, h.get('is_trig', True))}"
                                         )
                                         kb_m = {"inline_keyboard": [[{"text": f"🧮 Plan ({h['symbol']})", "callback_data": f"plan_{h['symbol']}"}, {"text": "➕ Obstawiam", "callback_data": f"addp_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}, {"text": "🛡️ Audyt", "callback_data": f"aud_{h['symbol']}"}, {"text": "🚫 Brak BitBase", "callback_data": f"bbl_{h['symbol']}"}]]}
                                         requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": card_m, "parse_mode": "HTML", "reply_markup": kb_m}, timeout=15)
@@ -1459,6 +1461,8 @@ def tg_listener():
                     elif cb == "clear_cfd_hist":
                         if os.path.exists(CFD_HIST_FILE): os.remove(CFD_HIST_FILE)
                         send_telegram("🗑️ <b>Historia trafien Live CFD zostala wyczyszczona!</b>")
+                    elif cb == "doc_rep":
+                        send_telegram(sdm.run_account_doctor())
                     elif cb == "csv":
                         tbl_txt = render_cfd_history_table()
                         kb_h = {"inline_keyboard": [[{"text": "🔄 Odswiez tabele", "callback_data": "csv"}, {"text": "🗑️ Wyczysc", "callback_data": "clear_cfd_hist"}], [{"text": "⬅ Menu", "callback_data": "back_menu"}]]}
@@ -1782,7 +1786,7 @@ def cfd_live_bg_loop():
                             if sl_m_l != 1.0:
                                 td_l = 1 if h["side"] == "LONG" else -1
                                 h["stop"] = round(h["entry"] - td_l * abs(h["entry"] - h["stop"]) * sl_m_l, 6)
-                            if h["symbol"] not in sam.get_bitbase_blacklist() and apm.validate_cfd_order(h["entry"], h["stop"], h["price"]) and h.get("win_prob", 0) >= min_p_l:
+                            if h["symbol"] not in sam.get_bitbase_blacklist() and sdm.check_sniper_quality(h["side"], btc_d, fetch_klines("BITGET", h["symbol"], "15m", 5))[0] and apm.validate_cfd_order(h["entry"], h["stop"], h["price"]) and h.get("win_prob", 0) >= min_p_l:
                                 return h
                     except Exception: pass
                     return None
@@ -1791,9 +1795,14 @@ def cfd_live_bg_loop():
                         if h and now_t - SEEN_CFD_SIGS.get(f"{h['symbol']}_{h['side']}", 0) >= 7200:
                             SEEN_CFD_SIGS[f"{h['symbol']}_{h['side']}"] = now_t
                             new_hits.append(h)
+                shadow_hits = [x for x in new_hits if x.get("win_prob", 0) < min_p_l]
+                for sh in shadow_hits[:4]:
+                    _append_lab_sample(SHADOW_LAB_FILE, f"SHADOW_T{sh.get('win_prob',50)}", sh["symbol"], sh["side"], sh.get("win_prob", 50), sh.get("alpha_tag", "SNIPER"), sh["entry"], sh["stop"])
+                audit_cfd_history_1m(SHADOW_LAB_FILE)
+                new_hits = [x for x in new_hits if x.get("win_prob", 0) >= min_p_l]
                 if new_hits:
                     new_hits.sort(key=lambda x: -x.get("win_prob", 0))
-                    top3_live = new_hits.__getitem__(slice(0, 3))
+                    top3_live = new_hits.__getitem__(slice(0, 2))
                     log_cfd_hits_to_file(top3_live, "LIVE")
                     LATEST["hits"] = top3_live
                     LATEST["ts"] = datetime.now().strftime("%H:%M:%S (LIVE CFD)")
@@ -1835,7 +1844,7 @@ def cfd_live_bg_loop():
                         tok_h, cid_h = tc_h.get("token", "").strip(), tc_h.get("chat_id", "").strip()
                         if tok_h and cid_h:
                             tp_now = atm.get_tuner_params()
-                            tuner_line = f"\n🧠 <b>Auto-Tuner:</b> Próg <b>{tp_now.get('min_prob', 64)}%</b> | Bufor SL <b>{tp_now.get('sl_mult', 1.0)}x</b> | <i>{tp_now.get('notes', 'Profil aktywny')}</i>"
+                            tuner_line = f"\n🧠 <b>Auto-Tuner (Skan 45-100% | Alerty ≥{tp_now.get('min_prob', 58)}%):</b>\n📊 Poziomy: <code>{atm.get_all_tiers_summary()}</code>"
                             requests.post(tg_url(tok_h, "sendMessage"), json={"chat_id": cid_h, "text": f"💓 <b>Puls CFD Live ({datetime.now().strftime('%H:%M')}):</b> Przeskanowano <b>{len(top_cfd)}</b> par | {btc_c} | Brak nowych okazji.{tuner_line}", "parse_mode": "HTML", "disable_notification": True}, timeout=15)
                 cycle_cnt += 1
         except Exception as err:

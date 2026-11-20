@@ -4,7 +4,7 @@ import auto_repair_mod as arm, ast, json, shutil, subprocess, traceback, py_comp
 REQ_PY = [
     "crypto_pro.py", "alpha_pro_mod.py", "auto_tuner_mod.py", "portfolio_mod.py",
     "planner_mod.py", "chart_mod.py", "demo_sim_mod.py", "web_pump_radar_mod.py",
-    "contract_audit_mod.py", "web_ui_mod.py", "self_test.py", "watchdog_mod.py", "session_analytics_mod.py", "auto_repair_mod.py"
+    "contract_audit_mod.py", "web_ui_mod.py", "self_test.py", "watchdog_mod.py", "session_analytics_mod.py", "auto_repair_mod.py", "sniper_doctor_mod.py"
 ]
 
 def check_ast_and_scope(fn):
