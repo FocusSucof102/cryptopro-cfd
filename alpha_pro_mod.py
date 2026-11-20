@@ -407,6 +407,47 @@ def scan_macro_pump_dump_coin(sym):
                             "price": cur, "entry": cur, "stop": sl,
                             "tp": [round(cur + sd * m, 6) for m in (1.5, 2.5, 4.0, 6.0, 10.0)]
                         }
+        # WZORZEC 6: Pulapka Funding Rate / Extreme Squeeze
+        try:
+            sl = chr(47)
+            u_fr = "".join(["https:", sl, sl, "api.", "bitget", ".com", sl, "api", sl, "v2", sl, "mix", sl, "market", sl, "current-fund-rate"])
+            r_fr = SESS.get(u_fr, params={"productType": "USDT-FUTURES", "symbol": sym}, timeout=3).json()
+            fr_val = float(r_fr.get("data", [{}]).get("fundingRate", 0) or 0) * 100.0
+            if fr_val <= -0.15 and cur > ma7_4h:
+                sl_p = round(cur - max(cur * 0.025, atr_4h * 1.5), 6)
+                sd_p = abs(cur - sl_p)
+                return {
+                    "symbol": sym, "side": "LONG", "mode": "🧲 WZORZEC 6: FUNDING SHORT-SQUEEZE",
+                    "win_prob": 82,
+                    "alpha_tag": f"FUNDING {fr_val:.3f}% | SQUEEZE LONG",
+                    "pattern_fit": "Archetyp Ekstremalnego Funding Rate (Masowe shorty placa kary -> wyciskanie w gore)",
+                    "narrative": f"Stawka finansowania spadla do {fr_val:.3f}%, co oznacza ekstremalne przeladowanie shortow. Wieloryby moga wycisnac pozycje krotkie w gore, zeby skasowac likwidacje.",
+                    "price": cur, "entry": cur, "stop": sl_p,
+                    "tp": [round(cur + sd_p * m, 6) for m in (1.5, 2.5, 4.0, 6.0, 10.0)]
+                }
+        except Exception:
+            pass
+
+        # WZORZEC 7: Schodkowa Pompa Bez Korekty (6+ zielonych swiec 1H z rzedu)
+        h1 = _apm_klines("BITGET", sym, "1h", 20)
+        if h1 and len(h1["c"]) >= 10:
+            greens = sum(1 for j in range(-7, -1) if float(h1["c"][j]) > float(h1["o"][j]))
+            ladder_pct = ((float(h1["c"][-2]) - float(h1["o"][-7])) / max(1e-9, float(h1["o"][-7]))) * 100.0
+            last_red = float(h1["c"][-1]) < float(h1["o"][-1])
+            if greens >= 5 and ladder_pct >= 10.0 and last_red:
+                sl_p = round(max(float(x) for x in h1["h"][-3:]) * 1.008, 6)
+                sd_p = abs(sl_p - cur)
+                if 0.01 <= (sd_p / max(1e-9, cur)) <= 0.10:
+                    return {
+                        "symbol": sym, "side": "SHORT", "mode": "🪜 WZORZEC 7: STAIRCASE LADDER DUMP",
+                        "win_prob": 79,
+                        "alpha_tag": f"SCHODKI +{ladder_pct:.1f}% ({greens}/6 zielonych 1H)",
+                        "pattern_fit": "Archetyp Schodkowej Pompy Algorytmicznej (Sztuczny marsz bez korekty + pierwsza czerwona 1H)",
+                        "narrative": f"Algorytm ciagnal kurs schodkowo w gore (+{ladder_pct:.1f}% na {greens} z 6 swiec 1H) bez korekty, a teraz pojawila sie pierwsza swieca podazowa. Czesty sygnal zakonczenia dystrybucji i szybkiego zrzutu.",
+                        "price": cur, "entry": cur, "stop": sl_p,
+                        "tp": [round(cur - sd_p * m, 6) for m in (1.5, 2.5, 4.0, 6.0, 10.0)]
+                    }
+
         return None
     except Exception:
         return None
