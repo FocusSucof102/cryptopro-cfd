@@ -223,3 +223,99 @@ def detect_weird_move(ex, sym):
         return "+".join(tags)
     except Exception:
         return ""
+
+def get_micro_161_plus_symbols():
+    try:
+        sl = chr(47)
+        u = "".join(["https:", sl, sl, "api.", "bitget", ".com", sl, "api", sl, "v2", sl, "mix", sl, "market", sl, "tickers"])
+        r = SESS.get(u, params={"productType": "USDT-FUTURES"}, timeout=6).json()
+        rows = []
+        for it in r.get("data", []):
+            sym = it.get("symbol", "")
+            vol_u = float(it.get("usdtVolume", 0) or 0)
+            if sym.endswith("USDT") and 50000 <= vol_u < 1000000:
+                rows.append((sym, vol_u))
+        rows.sort(key=lambda x: -x.__getitem__(1))
+        return [x.__getitem__(0) for x in rows.__getitem__(slice(0, 60))]
+    except Exception:
+        return []
+
+def _apm_klines(ex, sym, tf, lim):
+    import crypto_pro as cp
+    return cp.fetch_klines(ex, sym, tf, lim)
+
+def detect_cyclical_and_pump_dump(ex, sym):
+    try:
+        kl = _apm_klines(ex, sym, "15m", 120)
+        if not kl or len(kl["c"]) < 60: return "NO_DATA", 0.0, ""
+        vols, highs, lows, opens, closes = kl["v"], kl["h"], kl["l"], kl["o"], kl["c"]
+        avg_v = sum(vols) / len(vols)
+        spike_idxs = [i for i in range(len(vols)) if vols.__getitem__(i) >= avg_v * 3.5]
+        cyc_tag, gap_h = "SINGLE_IMPULSE", 0.0
+        if len(spike_idxs) >= 2:
+            gap_h = round((spike_idxs.__getitem__(-1) - spike_idxs.__getitem__(-2)) * 0.25, 2)
+            cyc_tag = f"CYCLIC_{gap_h}H"
+        # Detekcja Pump & Dump na ostatnich 4 swiecach 15m
+        p_idx = -3
+        base_p = float(opens.__getitem__(p_idx))
+        peak_p = max(float(highs.__getitem__(j)) for j in range(-3, 0))
+        cur_p = float(closes.__getitem__(-1))
+        pump_pct = ((peak_p - base_p) / max(1e-9, base_p)) * 100.0
+        retrace = ((peak_p - cur_p) / max(1e-9, peak_p - base_p)) if peak_p > base_p else 0.0
+        max_v_spike = max(float(vols.__getitem__(j)) for j in range(-3, 0)) / max(1e-9, avg_v)
+        pd_tag = ""
+        if pump_pct >= 3.5 and max_v_spike >= 4.0:
+            pd_tag = f"PUMP_DUMP_{pump_pct:.1f}%" if retrace >= 0.45 else f"ACTIVE_PUMP_{pump_pct:.1f}%"
+        return cyc_tag, gap_h, pd_tag
+    except Exception:
+        return "ERR", 0.0, ""
+
+def scan_macro_pump_dump_coin(sym):
+    try:
+        d1 = _apm_klines("BITGET", sym, "1d", 40)
+        h4 = _apm_klines("BITGET", sym, "4h", 60)
+        if not d1 or not h4 or len(d1["c"]) < 25 or len(h4["c"]) < 30:
+            return None
+        c1, h1, l1, o1, v1 = d1["c"], d1["h"], d1["l"], d1["o"], d1["v"]
+        cur = float(c1.__getitem__(-1))
+        avg_v20 = sum(float(x) for x in v1.__getitem__(slice(-21, -1))) / 20.0
+        v_now = float(v1.__getitem__(-1))
+        vol_mult = v_now / max(1e-9, avg_v20)
+
+        low_14d = min(float(x) for x in l1.__getitem__(slice(-15, -1)))
+        high_14d = max(float(x) for x in h1.__getitem__(slice(-14, None)))
+        pump_from_low = ((cur - low_14d) / max(1e-9, low_14d)) * 100.0
+        max_pump_14d = ((high_14d - low_14d) / max(1e-9, low_14d)) * 100.0
+        drop_from_peak = ((high_14d - cur) / max(1e-9, high_14d)) * 100.0
+
+        # MA7 na 4H jako wyzwalacz zalamania paraboli
+        c4 = [float(x) for x in h4["c"]]
+        ma7_4h = sum(c4.__getitem__(slice(-7, None))) / 7.0
+        atr_4h = sum(abs(float(h4["h"].__getitem__(j)) - float(h4["l"].__getitem__(j))) for j in range(-14, 0)) / 14.0
+
+        # SCENARIUSZ A: Wczesna faza MEGA-PUMP (wybicie z bazy + wolumen >= 4.5x)
+        if 25.0 <= pump_from_low <= 110.0 and vol_mult >= 4.5 and cur > ma7_4h:
+            sl = round(cur - max(cur * 0.04, atr_4h * 2.0), 6)
+            sd = abs(cur - sl)
+            return {
+                "symbol": sym, "side": "LONG", "mode": "🚀 EARLY_MEGA_PUMP",
+                "win_prob": min(84, int(62 + vol_mult * 2)),
+                "alpha_tag": f"PUMP +{pump_from_low:.0f}% | VOL {vol_mult:.1f}x",
+                "price": cur, "entry": cur, "stop": sl,
+                "tp": [round(cur + sd * m, 6) for m in (1.5, 2.5, 4.0, 6.0, 10.0)]
+            }
+
+        # SCENARIUSZ B: Faza DUMP po paraboli (wzrost > 120% w 14d, odrzucenie szczytu o min. 15% i zejscie pod MA7 4H)
+        if max_pump_14d >= 120.0 and 15.0 <= drop_from_peak <= 55.0 and cur < ma7_4h:
+            sl = round(cur + max(cur * 0.05, atr_4h * 2.2), 6)
+            sd = abs(sl - cur)
+            return {
+                "symbol": sym, "side": "SHORT", "mode": "🩸 PARABOLIC_DUMP",
+                "win_prob": min(86, int(65 + min(15, max_pump_14d / 20))),
+                "alpha_tag": f"SZCZYT +{max_pump_14d:.0f}% | SPADEK -{drop_from_peak:.0f}%",
+                "price": cur, "entry": cur, "stop": sl,
+                "tp": [round(cur - sd * m, 6) for m in (1.5, 2.5, 4.0, 6.0, 10.0)]
+            }
+        return None
+    except Exception:
+        return None

@@ -892,7 +892,7 @@ def tg_menu(cid=None, tok=None, notice=""):
         [{"text": "⚡ Skanuj CFD (Long/Short)", "callback_data": "scan_cfd10"}, {"text": live_txt, "callback_data": "tgl_cfd_live"}],
         [{"text": "💼 Portfel CFD", "callback_data": "tg_pf"}, {"text": "🧮 Planner", "callback_data": "tg_plan_menu"}, {"text": "📈 Wykresy", "callback_data": "prop_charts"}],
         [{"text": "⚙️ Warstwy", "callback_data": "chart_layers"}, {"text": "🏆 Symulacja CFD PRO", "callback_data": "demo_pro"}],
-        [{"text": "📜 Backtest 2020-2026", "callback_data": "bt_menu"}, {"text": "📊 Historia CSV", "callback_data": "csv"}],
+        [{"text": "📜 Backtest 2020-2026", "callback_data": "bt_menu"}, {"text": "📊 Historia CSV", "callback_data": "csv"}, {"text": "🚀 Pump & Dump", "callback_data": "scan_pd"}],
         [{"text": "🎭 Demo Okazji (Podglad Pulpitu)", "callback_data": "demo_preview"}]
     ]}
     head = f"{notice}\n\n" if notice else ""
@@ -1330,6 +1330,29 @@ def tg_listener():
                             if cb_img: requests.post(tg_url(tok, "sendPhoto"), data={"chat_id": cid, "caption": f"📈 {res['symbol']} ({res['date_from']} -> {res['date_to']})"}, files={"photo": ("bt.png", cb_img, "image/png")}, timeout=15)
                             send_telegram(f"📜 <b>{res['symbol']}</b> ({res['date_from']} → {res['date_to']})\n💰 1000$ → <b>{res['final_cap']:.2f}$</b> (<b>{res['net_pct']:+.1f}%</b>) | WR: <b>{res['win_rate']}%</b>\n\n<b>📊 LATA:</b>\n{yr_l}\n\n<b>🗓️ OSTATNIE 12 MIES.:</b>\n{mo_l}{cs_l}")
                         threading.Thread(target=bg_bt, daemon=True).start()
+                    elif cb == "scan_pd":
+                        requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": "🚀 <b>Skanuję 140 par pod kątem Mega-Pump & Dump (4H/1D, wzór RAVEUSDT)...</b>", "parse_mode": "HTML"}, timeout=15)
+                        pool_syms = apm.get_cfd_top60_symbols() + apm.get_wild_61_160_symbols() + apm.get_micro_161_plus_symbols()
+                        uniq_syms = list(dict.fromkeys(pool_syms)).__getitem__(slice(0, 140))
+                        pd_hits = []
+                        with ThreadPoolExecutor(max_workers=12) as pdp:
+                            for r_pd in pdp.map(apm.scan_macro_pump_dump_coin, uniq_syms):
+                                if r_pd: pd_hits.append(r_pd)
+                        if not pd_hits:
+                            requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": "🚀 <b>Skan Pump & Dump (140 par):</b> Brak obecnie aktywnej paraboli typu RAVEUSDT (wzrost >120% lub skok wolumenu >4.5x).", "parse_mode": "HTML"}, timeout=15)
+                        else:
+                            pd_hits.sort(key=lambda x: -x.get("win_prob", 0))
+                            LATEST["hits"] = pd_hits.__getitem__(slice(0, 4))
+                            for h in pd_hits.__getitem__(slice(0, 4)):
+                                tps_p = h.get("tp", [])
+                                card_p = (
+                                    f"{h.get('mode', '🚀 PUMP/DUMP')} — <b>{h['symbol']} ({h['side']})</b>\n"
+                                    f"🎯 Szansa: <b>{h['win_prob']}%</b> | 🧬 <i>{h['alpha_tag']}</i>\n"
+                                    f"💵 Cena: <code>{h['price']}</code> | 🛑 SL: <code>{h['stop']}</code>\n"
+                                    f"✅ TP1: <code>{tps_p.__getitem__(0)}</code> | 💰 TP2: <code>{tps_p.__getitem__(1)}</code> | 🏆 TP3: <code>{tps_p.__getitem__(2)}</code>"
+                                )
+                                kb_p = {"inline_keyboard": [[{"text": f"🧮 Plan ({h['symbol']})", "callback_data": f"plan_{h['symbol']}"}, {"text": "➕ Obstawiam", "callback_data": f"addp_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}]]}
+                                requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": card_p, "parse_mode": "HTML", "reply_markup": kb_p}, timeout=15)
                     elif cb == "clear_cfd_hist":
                         if os.path.exists(CFD_HIST_FILE): os.remove(CFD_HIST_FILE)
                         send_telegram("🗑️ <b>Historia trafien Live CFD zostala wyczyszczona!</b>")
@@ -1629,6 +1652,8 @@ def cfd_live_bg_loop():
                     if cycle_cnt % 2 == 0:
                         run_wild_market_probe()
                         audit_cfd_history_1m(WILD_LAB_FILE)
+                        run_micro_market_probe()
+                        audit_cfd_history_1m(MICRO_LAB_FILE)
                         btc_c = str(btc_lbl).replace("<", "&lt;").replace(">", "&gt;")
                         tc_h = json.load(open(TG_CONFIG_FILE)) if os.path.exists(TG_CONFIG_FILE) else {}
                         tok_h, cid_h = tc_h.get("token", "").strip(), tc_h.get("chat_id", "").strip()
@@ -1710,7 +1735,7 @@ def github_auto_sync_loop():
             if st_out:
                 for f in glob.glob("*.py"):
                     py_compile.compile(f, doraise=True)
-                subprocess.run(["git", "add", "*.py", "*.md", ".gitignore"], check=False)
+                subprocess.run(["git", "add", "-f", "*.py", "*.md", ".gitignore"], check=False)
                 subprocess.run(["git", "commit", "-m", f"Live-sync {datetime.now().strftime('%Y-%m-%d %H:%M')}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 r_p = subprocess.run(["git", "push", "origin", "main"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 if r_p.returncode == 0:
