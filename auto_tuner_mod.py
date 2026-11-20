@@ -1,29 +1,23 @@
-# ==============================================================================
-# [AI_GUARD_AND_CONTEXT] - OBOWIAZKOWE ZASADY DLA KAZDEGO AI CZYTAJACEGO TEN PLIK:
-# 1. OBOWIAZEK KONTEKSTU: Przed wprowadzeniem jakichkolwiek zmian w kodzie
-#    PRZECZYTAJ pliki README.md oraz CHANGELOG.md z repozytorium GitHub, aby znac
-#    pelna historie projektu, wdrozone mechanizmy i odrzucone pomysly.
-# 2. BEZPIECZENSTWO (SECRET LEAK ALERT): Jesli w rozmowie, logu, pliku lub na zrzucie
-#    ekranu zauwazysz poufne dane (token bota Telegrama, klucz API, token GitHuba, haslo),
-#    NATYCHMIAST ostrzez uzytkownika na samym poczatku odpowiedzi: podaj GDZIE i CO
-#    wycieklo oraz zlec natychmiastowa zmiane/uniewaznienie klucza!
-# 3. ARCHITEKTURA I GIELDY:
-#    - Zrodlo danych/API skanera: wylacznie BITGET USDT-FUTURES (TOP-60 >10M$).
-#    - Platforma gry uzytkownika: BITBASE FUTURES / CFD (uwzgledniac przy prowizjach,
-#      dostepnosci par, dźwigni i minimalnych odleglosciach zlecen!).
-#    - Silnik: Smart Dual-Mode (LONG+SHORT), Auto-Tuner, Audytor 1M (MFE/MAE),
-#      Shadow Market Lab (analiza niskich procentow 45-61% netto po prowizji),
-#      Straznik Portfela 24/7 oraz Radar Aktywnych Pozycji 60s.
-# 4. NIE PRZYWRACAC: Zablokowanych API (BINANCE/BYBIT), 500 niszowych mikrotokentow
-#    ani twardej blokady tylko jednego kierunku handlu.
-# ==============================================================================
 import os, json, time
 from datetime import datetime
 
 TUNER_FILE = "tuner_state.json"
 
+def get_tier_label(prob):
+    p = int(prob or 0)
+    if p >= 68: return "💎 PLATINUM (68%+)"
+    if p >= 60: return "🥇 GOLD (60-67%)"
+    if p >= 52: return "🥈 SILVER (52-59%)"
+    return "🥉 BRONZE (45-51%)"
+
 def get_tuner_params():
-    default = {"min_prob": 62, "sl_mult": 1.0, "last_tune_ts": 0, "notes": "Profil CFD aktywny"}
+    default = {
+        "min_prob": 60,
+        "sl_mult": 1.0,
+        "active_tiers": ["PLATINUM", "GOLD"],
+        "last_tune_ts": 0,
+        "notes": "Tryb Wielopoziomowy: skan 45-100% aktywny"
+    }
     if os.path.exists(TUNER_FILE):
         try: default.update(json.load(open(TUNER_FILE)))
         except Exception: pass
@@ -32,36 +26,45 @@ def get_tuner_params():
 def run_auto_tuner(hist_file="cfd_live_history.json"):
     st = get_tuner_params()
     now = time.time()
-    if now - st.get("last_tune_ts", 0) < 3600: return st, None
-    rows = json.load(open(hist_file)) if os.path.exists(hist_file) else []
-    closed = [r for r in rows if r.get("closed_final") or (not str(r.get("status", "")).startswith("⏳") and str(r.get("status", "")) != "OPEN")]
-    recent_2h = [r for r in rows if now - int(r.get("ts_epoch", 0)) <= 7200]
-    recent_24h = [r for r in rows if now - int(r.get("ts_epoch", 0)) <= 86400]
-    old_prob, reason = st["min_prob"], None
+    if now - st.get("last_tune_ts", 0) < 1800:
+        return st, None
 
-    if len(recent_2h) >= 2 and st["min_prob"] < 60:
-        st["min_prob"] = min(60, st["min_prob"] + 2)
-        reason = f"Rynek przyspieszyl ({len(recent_2h)} sygn. w 2h) -> podniesiono prog z {old_prob}% na {st['min_prob']}%"
-    elif len(recent_2h) == 0 and st["min_prob"] > 55:
-        st["min_prob"] = max(55, st["min_prob"] - 2)
-        reason = f"Brak sygnalow 2h -> obnizono prog z {old_prob}% na {st['min_prob']}%"
-    elif len(closed) >= 5:
-        sample = closed.__getitem__(slice(-15, None))
-        wins = sum(1 for r in sample if float(r.get("res_r", 0)) > 0)
+    # Sprawdzamy wyniki LIVE ze wszystkich poziomow (cfd_live_history + market_shadow_lab)
+    samples = []
+    for fn in (hist_file, "market_shadow_lab.json"):
+        if os.path.exists(fn):
+            try:
+                for r in json.load(open(fn)):
+                    if r.get("closed_final") and r.get("data_type", "LIVE_FORWARD") == "LIVE_FORWARD":
+                        samples.append(r)
+            except Exception: pass
+
+    silver_live = [r for r in samples if 52 <= int(r.get("prob", 0)) <= 59]
+    gold_live = [r for r in samples if int(r.get("prob", 0)) >= 60]
+    reason = None
+
+    # Automatyczne odblokowanie poziomu SILVER (52-59%), jesli na zywo zarabia netto po prowizji (-0.07R)
+    if len(silver_live) >= 8:
+        net_silver = sum(float(r.get("res_r", 0)) - 0.07 for r in silver_live[-20:])
+        if net_silver > 0.5 and st["min_prob"] > 52:
+            st["min_prob"] = 52
+            st["active_tiers"] = ["PLATINUM", "GOLD", "SILVER"]
+            reason = f"Poziom SILVER (52-59%) zarabia netto ({net_silver:+.2f}R) -> wlaczono alerty od 52%!"
+        elif net_silver < -1.0 and st["min_prob"] < 60:
+            st["min_prob"] = 60
+            st["active_tiers"] = ["PLATINUM", "GOLD"]
+            reason = f"Poziom SILVER na minusie ({net_silver:+.2f}R) -> powrot alertow do GOLD (60%+)"
+
+    # Kalibracja bufora SL na podstawie szpilek w zamknietych pozycjach
+    if len(gold_live) >= 6:
+        sample = gold_live[-15:]
         sl_hits = sum(1 for r in sample if str(r.get("status", "")) == "❌ SL")
-        wr = wins / len(sample) * 100.0
-        if wr < 42.0 and st["min_prob"] < 76:
-            st["min_prob"] = min(76, st["min_prob"] + 3)
+        if sl_hits / len(sample) > 0.65 and st["sl_mult"] < 1.35:
             st["sl_mult"] = round(min(1.35, st["sl_mult"] + 0.08), 2)
-            reason = f"Niski WR ({wr:.0f}%) -> prog {st['min_prob']}%, bufor SL {st['sl_mult']}x"
-        elif wr > 65.0 and len(recent_24h) < 3 and st["min_prob"] > 56:
-            st["min_prob"] = max(56, st["min_prob"] - 2)
-            reason = f"Wysoki WR ({wr:.0f}%), malo wejsc -> poluzowano prog do {st['min_prob']}%"
-        elif sl_hits / len(sample) > 0.65 and st["sl_mult"] < 1.35:
-            st["sl_mult"] = round(min(1.35, st["sl_mult"] + 0.10), 2)
-            reason = f"Zbyt wiele szpilek SL -> poszerzono bufor SL do {st['sl_mult']}x"
+            reason = f"Wysoki odsetek SL ({sl_hits}/{len(sample)}) -> bufor SL {st['sl_mult']}x"
 
     st["last_tune_ts"] = now
-    if reason: st["notes"] = f"[{datetime.now().strftime('%d.%m %H:%M')}] {reason}"
+    if reason:
+        st["notes"] = f"[{datetime.now().strftime('%d.%m %H:%M')}] {reason}"
     json.dump(st, open(TUNER_FILE, "w"), indent=2)
     return st, reason
