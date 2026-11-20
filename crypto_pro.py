@@ -1367,7 +1367,7 @@ def tg_listener():
                                         requests.post(tg_url(tok, "editMessageText"), json={"chat_id": cid, "message_id": p_mid, "text": f"🚀 <b>Skanuję {tot_u} par (4 wzorce Pump & Dump)...</b>\n<code>[{bars_u}] {pct_u}%</code> ({done_u}/{tot_u})", "parse_mode": "HTML"}, timeout=10)
                                     except Exception: pass
                         if not pd_hits:
-                            requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": "🚀 <b>Skan Pump & Dump (140 par):</b> Brak obecnie aktywnej paraboli typu RAVEUSDT (wzrost >120% lub skok wolumenu >4.5x).", "parse_mode": "HTML"}, timeout=15)
+                            requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": "🚀 <b>Skan Pump & Dump (140 par) — Brak aktywnego sygnału</b>\nSprawdzono rynek pod kątem <b>4 wzorców</b>:\n1️⃣ <i>Wybicie z bazy (BLZ/LOOM)</i> — skok vol &gt;4x na 1D\n2️⃣ <i>Blow-Off Top (TRB/CYBER)</i> — rajd &gt;100% + knot odrzucenia\n3️⃣ <i>Parabolic Rug Bleed (RAVE/OM)</i> — spadek po paraboli pod MA7/MA25\n4️⃣ <i>Flash Pump &amp; Dump (15M)</i> — szybka pompa &gt;8% i zrzut", "parse_mode": "HTML"}, timeout=15)
                         else:
                             pd_hits.sort(key=lambda x: -x.get("win_prob", 0))
                             LATEST["hits"] = pd_hits.__getitem__(slice(0, 4))

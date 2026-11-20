@@ -69,10 +69,17 @@ def run_full_self_test():
     return f"8/8 ETAPOW OK | Pule: {len(t60)}/{len(w80)}/{len(m60)} | Tuner: {st['min_prob']}% | Baza: {hist_tot} HIST + {live_tot} LIVE"
 
 if __name__ == "__main__":
+    G, R, B, X = "\033[1;92m", "\033[1;91m", "\033[1m", "\033[0m"
     try:
         summary = run_full_self_test()
-        print(f"✅ [SELF-TEST] {summary}")
+        print(f"\n{G}╔══════════════════════════════════════════════════════╗")
+        print(f"║   ✅  SELF-TEST: WSZYSTKIE 8/8 TESTÓW OK!            ║")
+        print(f"╚══════════════════════════════════════════════════════╝{X}")
+        print(f"{G}{B}📊 {summary}{X}\n")
         sys.exit(0)
     except Exception as e:
-        print(f"❌ [SELF-TEST BLAD KRYTYCZNY] {e}")
+        print(f"\n{R}╔══════════════════════════════════════════════════════╗")
+        print(f"║   ❌  SELF-TEST: WYKRYTO BŁĄD KRYTYCZNY!             ║")
+        print(f"╚══════════════════════════════════════════════════════╝{X}")
+        print(f"{R}{B}⚠️  PRZYCZYNA: {e}{X}\n")
         sys.exit(1)
