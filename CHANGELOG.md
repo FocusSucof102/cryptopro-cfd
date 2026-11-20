@@ -32,3 +32,19 @@
 - **Auto-Tuner (`auto_tuner_mod.py`):** Automatycznie obniża próg czułości po `2h` ciszy (min. `56%`) lub zaostrza próg i poszerza bufor SL, gdy skuteczność z audytu `1m` spada poniżej `42%`.
 - **Puls Życia (`30 min`):** Cichy raport kontrolny z liczbą przeskanowanych par oraz aktualnymi nastawami Auto-Tunera.
 - **Integracja z GitHub + `self_test.py`:** Ochrona kluczy prywatnych przez `.gitignore` (`*.json`, `*.csv`, `*.log`) oraz automatyczna weryfikacja składni i połączenia z API.
+
+## Etap 6: Pełny Rejestr Decyzji i Przerobionych Opcji (Pamięć Projektu)
+### ✅ Opcje zatwierdzone i działające w systemie:
+1. **Giełda i koszyk par:** Wyłącznie `BITGET USDT-FUTURES` (`TOP-60` par o obrocie dobowym `> 10M$`), walidacja odległości `Entry <-> SL >= 0.35%`.
+2. **Kierunek handlu (`Smart Dual-Mode`):** Gra `LONG` oraz `SHORT` jednocześnie, z priorytetem dla makro-reżimu Bitcoina (`EMA 200 1H`) oraz warunkowym dopuszczeniem kontr-trendowych odbić przy silnym `RS vs BTC` lub `TTM Squeeze`.
+3. **Szybkość i kalibracja:** Skaner wielowątkowy (`12 wątków`), automatyczny `Auto-Tuner` (obniża próg po 2h ciszy do min. `55%`, zaostrza przy `WR < 42%` i poszerza bufor SL przy serii szpilek), cichy `Puls CFD Live` co 30 minut z bieżącym statusem tunera.
+4. **Karty okazji i Planner:** Pasek zgodności wielointerwałowej `MTF (X/4: 15M | 1H | 4H | 1D)`, procentowa szansa kontynuacji, przyciski `🧮 Plan`, `➕ Obstawiam`, `📈 Wykres`, osobne kopiowanie każdej z 7 wartości (`Wejście`, `SL`, `TP1..TP5`) przez `termux-clipboard-set`.
+5. **Strażnik Portfela 24/7:** Pre-check marginu (`>50%`), korelacji kierunku (`>=2` pozycje) i łącznego ryzyka SL (`>6%`) na kartach okazji; Szybki Radar Aktywnych Pozycji (`co 60s`) chroniący przed błędem zera po przecinku na giełdzie; Dzienny Wyłącznik Straty (`>= 8%`) z przyciskami wyciszenia `15 / 30 / 60 min`.
+6. **Audytor Wyników (`📊 Historia CSV`):** Weryfikacja minuta po minucie na świecach `1m` (oraz `5m` powyżej 16,5h) z uwzględnieniem przypadkowych szpilek `High/Low`, czasem do wyniku oraz blokadą zamkniętych pozycji (`closed_final`).
+7. **Automatyzacja GitHub:** Ochrona prywatnych kluczy (`*.json`, `*.csv`, `*.log` w `.gitignore`), `self_test.py` oraz ciągła auto-synchronizacja z repozytorium `FocusSucof102/cryptopro-cfd` co 5 minut i przy starcie.
+
+### ❌ Opcje odrzucone / wycięte (nie przywracać):
+- Giełdy spotowe (`BITBASE`) oraz zablokowane API (`BINANCE`, `BYBIT`).
+- Skanowanie wszystkich ~500 niszowych mikrotokentów z małą płynnością (zbyt duże spready i stop-hunty).
+- Twarda blokada tylko jednego kierunku (`Tylko SHORT` lub `Tylko LONG`).
+- Stare przyciski z pierwszej wersji menu (nieużywane w handlu CFD).
