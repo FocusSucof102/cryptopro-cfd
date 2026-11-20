@@ -16,6 +16,8 @@ def check_ast_and_scope(fn):
 
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.body and next(iter(node.body)).lineno > node.lineno and ast.get_docstring(node) is None:
+                raise RuntimeError(f"QA 5.0 Docstring-Guard: Brak opisu funkcji '{node.name}' w {fn}:{node.lineno}!")
             if node.name in seen_funcs:
                 raise RuntimeError(f"QA 5.0 AST: Duplikat '{node.name}' w {fn}:{node.lineno}!")
             seen_funcs.add(node.name)
