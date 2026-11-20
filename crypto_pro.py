@@ -831,7 +831,14 @@ def audit_cfd_history_1m():
 def render_cfd_history_table():
     rows = audit_cfd_history_1m()
     if not rows:
-        return "📊 <b>AUDYT I TELEMETRIA LIVE CFD (1M)</b>\n<i>Brak jeszcze zapisanych trafien. Kazdy kolejny sygnal zapisze pelny kontekst (BTC, sesje, MTF, MFE/MAE) do analizy!</i>"
+        lab_stats = []
+        for l_lbl, l_fn in [("Shadow TOP-60", "market_shadow_lab.json"), ("Wild 61-160", "wild_market_lab.json"), ("Micro 161+", "micro_market_lab.json")]:
+            if os.path.exists(l_fn):
+                arr_l = json.load(open(l_fn))
+                lv_c = sum(1 for x in arr_l if x.get("data_type") == "LIVE_FORWARD")
+                hs_c = sum(1 for x in arr_l if x.get("data_type") == "HIST_BACKFILL")
+                lab_stats.append(f"• <b>{l_lbl}:</b> {lv_c} LIVE na żywo | {hs_c} HIST")
+        return "📊 <b>AUDYT LIVE CFD & LABORATORIA RYNKOWE</b>\n<i>Główny portfel sygnałów (GOLD/PLATINUM): 0 trafień od startu.</i>\n\n🧪 <b>STAN ZBIERANIA DANYCH W TLE (24/7):</b>\n" + "\n".join(lab_stats)
     lines = ["Para   | Typ | Wynik     | MFE   | Czas", "-------+-----+-----------+-------+------"]
     for r in reversed(rows.__getitem__(slice(-15, None))):
         s_col = str(r.get("sym", "")).replace("USDT", "")[:6].ljust(6)
