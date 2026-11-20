@@ -1231,14 +1231,14 @@ def tg_listener():
                                         pass
                                 btc_cm = str(btc_lbl).replace("<", "&lt;").replace(">", "&gt;")
                                 if not hits:
-                                    nh_txt = f"🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥\n⛔⛔⛔ <b>BRAK AKTYWNYCH SYGNAŁÓW</b> ⛔⛔⛔\n🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥\n⚡ <b>CFD TOP-60</b> ({btc_cm})\nBrak czystego wejscia w tym kwadransie (próg Auto-Tunera: <b>{min_p_dyn}%</b>). Czekamy na impuls bez otwierania pozycji na sile."
-                                    requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": nh_txt, "parse_mode": "HTML", "reply_markup": {"inline_keyboard": [[{"text": "🔄 Skanuj CFD ponownie", "callback_data": "scan_cfd10"}, {"text": "⬅ Menu", "callback_data": "back_menu"}]]}}, timeout=15)
+                                    nh_txt = f"🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥\n⛔ <b>BRAK AKTYWNYCH SYGNAŁÓW</b> ⛔\n🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥\n⚡ <b>CFD TOP-60</b> ({btc_cm})\nBrak czystego wejscia w tym kwadransie (próg Auto-Tunera: <b>{min_p_dyn}%</b>). Czekamy na impuls bez otwierania pozycji na sile."
+                                    requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": nh_txt, "parse_mode": "HTML", "reply_markup": {"inline_keyboard": [[{"text": "🔄 Skanuj ponownie", "callback_data": "scan_cfd10"}, {"text": "⬅ Menu", "callback_data": "back_menu"}]]}}, timeout=15)
                                 else:
                                     hits.sort(key=lambda x: -x.get("win_prob", 0))
                                     top3_m = hits.__getitem__(slice(0, 2))
                                     LATEST["hits"] = top3_m
                                     log_cfd_hits_to_file(top3_m, "SKAN")
-                                    requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": f"🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n✅✅✅ <b>SĄ AKTYWNE OKAZJE!</b> ✅✅✅\n🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n⚡ <b>SYGNALY CFD TOP-60</b> | {btc_cm}\nZnaleziono <b>{len(top3_m)}</b> najlepsze okazje:", "parse_mode": "HTML"}, timeout=15)
+                                    requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": f"🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n✅ <b>SĄ AKTYWNE OKAZJE!</b> ✅\n🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n⚡ <b>SYGNALY CFD TOP-60</b> | {btc_cm}\nZnaleziono <b>{len(top3_m)}</b> najlepsze okazje:", "parse_mode": "HTML"}, timeout=15)
                                     for h in top3_m:
                                         tps_m = h.get("tp", [])
                                         tp1_m = tps_m.__getitem__(0) if len(tps_m) > 0 else h["entry"]
@@ -1444,11 +1444,11 @@ def tg_listener():
                                         requests.post(tg_url(tok, "editMessageText"), json={"chat_id": cid, "message_id": p_mid, "text": f"🚀 <b>Skanuję {tot_u} par (7 wzorców Pump & Dump)...</b>\n<code>[{bars_u}] {pct_u}%</code> ({done_u}/{tot_u})", "parse_mode": "HTML"}, timeout=10)
                                     except Exception: pass
                         if not pd_hits:
-                            requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": "🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥\n⛔⛔⛔ <b>BRAK AKTYWNYCH SYGNAŁÓW</b> ⛔⛔⛔\n🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥\n🚀 <b>Skan Pump & Dump (100% par na giełdzie)</b>\nSprawdzono rynek pod kątem <b>7 wzorców</b>:\n1️⃣ <i>Wybicie z bazy (BLZ/LOOM)</i> — skok vol &gt;4x na 1D\n2️⃣ <i>Blow-Off Top (TRB/CYBER)</i> — rajd &gt;100% + knot odrzucenia\n3️⃣ <i>Parabolic Rug Bleed (RAVE/OM)</i> — spadek po paraboli pod MA7/MA25\n4️⃣ <i>Flash Pump &amp; Dump (15M)</i> — szybka pompa &gt;8% i zrzut\n5️⃣ <i>Bot Ping-Pong</i> — równe słupki 50/50 + wybicie\n6️⃣ <i>Funding Squeeze</i> — ujemny funding &lt;-0.15%\n7️⃣ <i>Staircase Dump</i> — 5+ zielonych 1H + pierwsza czerwona", "parse_mode": "HTML"}, timeout=15)
+                            requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": "🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥\n⛔ <b>BRAK AKTYWNYCH SYGNAŁÓW</b> ⛔\n🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥\n🚀 <b>Skan Pump & Dump (100% par na giełdzie)</b>\nSprawdzono rynek pod kątem <b>7 wzorców</b>:\n1️⃣ <i>Wybicie z bazy (BLZ/LOOM)</i> — skok vol &gt;4x na 1D\n2️⃣ <i>Blow-Off Top (TRB/CYBER)</i> — rajd &gt;100% + knot odrzucenia\n3️⃣ <i>Parabolic Rug Bleed (RAVE/OM)</i> — spadek po paraboli pod MA7/MA25\n4️⃣ <i>Flash Pump &amp; Dump (15M)</i> — szybka pompa &gt;8% i zrzut\n5️⃣ <i>Bot Ping-Pong</i> — równe słupki 50/50 + wybicie\n6️⃣ <i>Funding Squeeze</i> — ujemny funding &lt;-0.15%\n7️⃣ <i>Staircase Dump</i> — 5+ zielonych 1H + pierwsza czerwona", "parse_mode": "HTML"}, timeout=15)
                         else:
                             pd_hits.sort(key=lambda x: -x.get("win_prob", 0))
                             LATEST["hits"] = pd_hits.__getitem__(slice(0, 4))
-                            requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": "🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n✅✅✅ <b>SĄ AKTYWNE OKAZJE!</b> ✅✅✅\n🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n🚀 <b>WYKRYTO POMPĘ / ZRZUT (7 WZORCÓW)!</b>", "parse_mode": "HTML"}, timeout=15)
+                            requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": "🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n✅ <b>SĄ AKTYWNE OKAZJE!</b> ✅\n🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n🚀 <b>WYKRYTO POMPĘ / ZRZUT (7 WZORCÓW)!</b>", "parse_mode": "HTML"}, timeout=15)
                             for h in pd_hits.__getitem__(slice(0, 4)):
                                 tps_p = h.get("tp", [])
                                 card_p = (
@@ -1811,7 +1811,7 @@ def cfd_live_bg_loop():
                     tok_l, cid_l = tc_l.get("token", "").strip(), tc_l.get("chat_id", "").strip()
                     if tok_l and cid_l:
                         btc_c = str(btc_lbl).replace("<", "&lt;").replace(">", "&gt;")
-                        requests.post(tg_url(tok_l, "sendMessage"), json={"chat_id": cid_l, "text": f"🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n✅✅✅ <b>SĄ AKTYWNE OKAZJE!</b> ✅✅✅\n🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n🚨 <b>AUTO-ALERT CFD LIVE (15m)</b> | {btc_c}\nZnaleziono <b>{len(top3_live)}</b> swieze okazje:", "parse_mode": "HTML"}, timeout=15)
+                        requests.post(tg_url(tok_l, "sendMessage"), json={"chat_id": cid_l, "text": f"🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n✅ <b>SĄ AKTYWNE OKAZJE!</b> ✅\n🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n🚨 <b>AUTO-ALERT CFD LIVE (15m)</b> | {btc_c}\nZnaleziono <b>{len(top3_live)}</b> swieze okazje:", "parse_mode": "HTML"}, timeout=15)
                         for h in top3_live:
                             tps_l = h.get("tp", [])
                             tp1_l = tps_l.__getitem__(0) if len(tps_l) > 0 else h["entry"]
@@ -1846,7 +1846,7 @@ def cfd_live_bg_loop():
                         if tok_h and cid_h:
                             tp_now = atm.get_tuner_params()
                             tuner_line = f"\n🧠 <b>Auto-Tuner (Skan 45-100% | Alerty ≥{tp_now.get('min_prob', 58)}%):</b>\n📊 Poziomy: <code>{atm.get_all_tiers_summary()}</code>"
-                            requests.post(tg_url(tok_h, "sendMessage"), json={"chat_id": cid_h, "text": f"🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥\n⛔⛔⛔ <b>BRAK AKTYWNYCH SYGNAŁÓW</b> ⛔⛔⛔\n🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥\n💓 <b>Puls CFD Live ({datetime.now().strftime('%H:%M')}):</b> Przeskanowano <b>{len(top_cfd)}</b> par | {btc_c} | Brak nowych okazji.{tuner_line}", "parse_mode": "HTML", "disable_notification": True}, timeout=15)
+                            requests.post(tg_url(tok_h, "sendMessage"), json={"chat_id": cid_h, "text": f"🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥\n⛔ <b>BRAK AKTYWNYCH SYGNAŁÓW</b> ⛔\n🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥\n💓 <b>Puls CFD Live ({datetime.now().strftime('%H:%M')}):</b> Przeskanowano <b>{len(top_cfd)}</b> par | {btc_c} | Brak nowych okazji.{tuner_line}", "parse_mode": "HTML", "disable_notification": True}, timeout=15)
                 cycle_cnt += 1
         except Exception as err:
             print("CFD_LIVE_ERR:", err)

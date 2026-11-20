@@ -41,7 +41,7 @@ def get_all_tiers_summary():
         sub = [r for r in samples if lo <= int(r.get("prob", 0)) <= hi]
         net = round(sum(float(r.get("res_r", 0)) - 0.07 for r in sub), 1)
         parts.append(f"{lbl}:{len(sub)}({net:+.1f}R)")
-    return " | ".join(parts)
+    return "\n".join(parts)
 
 def run_auto_tuner(hist_file="cfd_live_history.json"):
     """Kalibruje prog alertow i bufor SL na podstawie wynikow LIVE ze wszystkich 4 poziomow. Parametry: hist_file."""
