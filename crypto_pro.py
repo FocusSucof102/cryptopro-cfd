@@ -898,7 +898,7 @@ def tg_menu(cid=None, tok=None, notice=""):
     sess_lbl = apm.get_session_badge() if "apm" in globals() else ""
     live_txt = "🟢 Live CFD: ON (15m)" if CFD_LIVE_ACTIVE else "⚪ Live CFD: OFF"
     kb = {"inline_keyboard": [
-        [{"text": "⚡ Skanuj CFD (Long/Short)", "callback_data": "scan_cfd10"}, {"text": live_txt, "callback_data": "tgl_cfd_live"}],
+        [{"text": "⚡ 🌐 Otwórz Pulpit Chrome (2.0)", "callback_data": "open_chrome_ui"}], [{"text": "⚡ Skanuj CFD (Long/Short)", "callback_data": "scan_cfd10"}, {"text": live_txt, "callback_data": "tgl_cfd_live"}],
         [{"text": "💼 Portfel CFD", "callback_data": "tg_pf"}, {"text": "🧮 Planner", "callback_data": "tg_plan_menu"}, {"text": "📈 Wykresy", "callback_data": "prop_charts"}],
         [{"text": "⚙️ Warstwy", "callback_data": "chart_layers"}, {"text": "🏆 Symulacja CFD PRO", "callback_data": "demo_pro"}],
         [{"text": "📜 Backtest 2020-2026", "callback_data": "bt_menu"}, {"text": "📊 Historia CSV", "callback_data": "csv"}, {"text": "🚀 Pump & Dump", "callback_data": "scan_pd"}],
