@@ -173,6 +173,7 @@ def validate_cfd_order(entry, stop, cur_price):
     return True
 
 def get_mtf_status_line(ex, sym, side):
+    import crypto_pro as cp
     td = 1 if side == "LONG" else -1
     res, ok_cnt = [], 0
     for tf in ("15m", "1h", "4h", "1d"):
@@ -180,8 +181,8 @@ def get_mtf_status_line(ex, sym, side):
             kl = _apm_klines(ex, sym, tf, 60)
             if kl and len(kl["c"]) >= 50:
                 c_now = kl["c"].__getitem__(-1)
-                e21 = ema(kl["c"], 21).__getitem__(-1)
-                e50 = ema(kl["c"], 50).__getitem__(-1)
+                e21 = cp.ema(kl["c"], 21).__getitem__(-1)
+                e50 = cp.ema(kl["c"], 50).__getitem__(-1)
                 ok = (c_now > e21 and e21 > e50) if td == 1 else (c_now < e21 and e21 < e50)
                 if ok: ok_cnt += 1
                 res.append(f"{tf.upper()} {'✅' if ok else '⚠️'}")
