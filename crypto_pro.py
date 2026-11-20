@@ -1627,6 +1627,8 @@ def cfd_live_bg_loop():
                 else:
                     # Co 2 cykle (co 30 min) wysylamy cichy Puls Zycia, zeby bylo wiadomo ze radar CFD pracuje
                     if cycle_cnt % 2 == 0:
+                        run_wild_market_probe()
+                        audit_cfd_history_1m(WILD_LAB_FILE)
                         btc_c = str(btc_lbl).replace("<", "&lt;").replace(">", "&gt;")
                         tc_h = json.load(open(TG_CONFIG_FILE)) if os.path.exists(TG_CONFIG_FILE) else {}
                         tok_h, cid_h = tc_h.get("token", "").strip(), tc_h.get("chat_id", "").strip()

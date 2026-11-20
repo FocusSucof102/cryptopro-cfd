@@ -190,3 +190,36 @@ def get_mtf_status_line(ex, sym, side):
         except Exception:
             res.append(f"{tf.upper()} ➖")
     return f"📊 <b>MTF ({ok_cnt}/4):</b> " + " | ".join(res)
+
+def get_wild_61_160_symbols():
+    try:
+        sl = chr(47)
+        u = "".join(["https:", sl, sl, "api.", "bitget", ".com", sl, "api", sl, "v2", sl, "mix", sl, "market", sl, "tickers"])
+        r = SESS.get(u, params={"productType": "USDT-FUTURES"}, timeout=6).json()
+        rows = []
+        for it in r.get("data", []):
+            sym = it.get("symbol", "")
+            vol_u = float(it.get("usdtVolume", 0) or 0)
+            if sym.endswith("USDT") and 1000000 <= vol_u < 10000000:
+                rows.append((sym, vol_u))
+        rows.sort(key=lambda x: -x.__getitem__(1))
+        return [x.__getitem__(0) for x in rows.__getitem__(slice(0, 80))]
+    except Exception:
+        return []
+
+def detect_weird_move(ex, sym):
+    try:
+        kl = fetch_klines(ex, sym, "15m", 25)
+        if not kl or len(kl["c"]) < 20: return ""
+        o, h, l, c, v = kl["o"].__getitem__(-1), kl["h"].__getitem__(-1), kl["l"].__getitem__(-1), kl["c"].__getitem__(-1), kl["v"].__getitem__(-1)
+        avg_v = sum(kl["v"].__getitem__(slice(-20, -1))) / 19.0
+        rng = max(1e-9, h - l)
+        body = abs(c - o)
+        wick_ratio = (rng - body) / rng
+        vol_spike = v / max(1e-9, avg_v)
+        tags = []
+        if vol_spike >= 4.0: tags.append(f"VOL_SPIKE_{vol_spike:.1f}x")
+        if wick_ratio >= 0.65 and (rng / max(1e-9, c)) >= 0.015: tags.append("LONG_WICK_HUNT")
+        return "+".join(tags)
+    except Exception:
+        return ""
