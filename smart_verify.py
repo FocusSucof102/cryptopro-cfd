@@ -106,7 +106,7 @@ if __name__ == "__main__":
         m = re.findall(r'File "([^"]+)", line (\d+)', tb_str)
         ctx_lines = []
         if m:
-            err_file, err_line = m[-1], int(m[-1])
+            err_file, err_line_s = m[-1]; err_line = int(err_line_s)
             if os.path.exists(err_file):
                 all_l = open(err_file, encoding="utf-8", errors="ignore").readlines()
                 s_i, e_i = max(0, err_line - 4), min(len(all_l), err_line + 3)

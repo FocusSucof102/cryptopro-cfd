@@ -40,6 +40,7 @@ loadState();setInterval(loadState,30000);
 </script></body></html>"""
 
 def register_web_ui(app, cp_mod, apm, atm, cam, wpr):
+    if "api_web_full_state" in app.view_functions: return
     @app.route("/api/web_full_state")
     def api_web_full_state():
         t_st = atm.get_tuner_params()
