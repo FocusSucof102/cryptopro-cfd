@@ -177,7 +177,7 @@ def get_mtf_status_line(ex, sym, side):
     res, ok_cnt = [], 0
     for tf in ("15m", "1h", "4h", "1d"):
         try:
-            kl = fetch_klines(ex, sym, tf, 60)
+            kl = _apm_klines(ex, sym, tf, 60)
             if kl and len(kl["c"]) >= 50:
                 c_now = kl["c"].__getitem__(-1)
                 e21 = ema(kl["c"], 21).__getitem__(-1)

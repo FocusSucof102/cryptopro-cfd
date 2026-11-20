@@ -1330,6 +1330,25 @@ def tg_listener():
                             if cb_img: requests.post(tg_url(tok, "sendPhoto"), data={"chat_id": cid, "caption": f"📈 {res['symbol']} ({res['date_from']} -> {res['date_to']})"}, files={"photo": ("bt.png", cb_img, "image/png")}, timeout=15)
                             send_telegram(f"📜 <b>{res['symbol']}</b> ({res['date_from']} → {res['date_to']})\n💰 1000$ → <b>{res['final_cap']:.2f}$</b> (<b>{res['net_pct']:+.1f}%</b>) | WR: <b>{res['win_rate']}%</b>\n\n<b>📊 LATA:</b>\n{yr_l}\n\n<b>🗓️ OSTATNIE 12 MIES.:</b>\n{mo_l}{cs_l}")
                         threading.Thread(target=bg_bt, daemon=True).start()
+                    elif cb == "chart_layers":
+                        st_l = load_settings()
+                        cur_l = st_l.get("layers", {"ema": True, "smc": True, "sr": True, "fvg": True})
+                        txt_l = "⚙️ <b>WARSTWY WYKRESU SMC / EMA</b>\nKliknij warstwe, aby wlaczyc/wylaczyc na wykresach:"
+                        kb_l = {"inline_keyboard": [
+                            [{"text": f"{'✅' if cur_l.get('ema', True) else '❌'} EMA 21/50/200", "callback_data": "tgl_l_ema"},
+                             {"text": f"{'✅' if cur_l.get('smc', True) else '❌'} SMC / OrderBlocks", "callback_data": "tgl_l_smc"}],
+                            [{"text": f"{'✅' if cur_l.get('sr', True) else '❌'} Wsparcia/Opory", "callback_data": "tgl_l_sr"},
+                             {"text": f"{'✅' if cur_l.get('fvg', True) else '❌'} FVG / Imbalance", "callback_data": "tgl_l_fvg"}],
+                            [{"text": "⬅ Menu", "callback_data": "back_menu"}]
+                        ]}
+                        requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": txt_l, "parse_mode": "HTML", "reply_markup": kb_l}, timeout=15)
+                    elif cb.startswith("tgl_l_"):
+                        lk = cb.replace("tgl_l_", "")
+                        st_l = load_settings()
+                        cur_l = st_l.setdefault("layers", {"ema": True, "smc": True, "sr": True, "fvg": True})
+                        cur_l[lk] = not cur_l.get(lk, True)
+                        save_settings(st_l)
+                        requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": f"✅ Przelaczono warstwe <b>{lk.upper()}</b> -> <b>{'WLACZONA' if cur_l[lk] else 'WYLACZONA'}</b>", "parse_mode": "HTML"}, timeout=15)
                     elif cb == "scan_pd":
                         requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": "🚀 <b>Skanuję 140 par pod kątem Mega-Pump & Dump (4H/1D, wzór RAVEUSDT)...</b>", "parse_mode": "HTML"}, timeout=15)
                         pool_syms = apm.get_cfd_top60_symbols() + apm.get_wild_61_160_symbols() + apm.get_micro_161_plus_symbols()
