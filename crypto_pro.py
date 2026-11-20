@@ -1350,13 +1350,22 @@ def tg_listener():
                         save_settings(st_l)
                         requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": f"✅ Przelaczono warstwe <b>{lk.upper()}</b> -> <b>{'WLACZONA' if cur_l[lk] else 'WYLACZONA'}</b>", "parse_mode": "HTML"}, timeout=15)
                     elif cb == "scan_pd":
-                        requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": "🚀 <b>Skanuję 140 par pod kątem Mega-Pump & Dump (4H/1D, wzór RAVEUSDT)...</b>", "parse_mode": "HTML"}, timeout=15)
+                        p_msg = requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": "🚀 <b>Skanuję 140 par (4 wzorce Pump & Dump)...</b>\n<code>[░░░░░░░░░░] 0%</code>", "parse_mode": "HTML"}, timeout=15).json()
+                        p_mid = p_msg.get("result", {}).get("message_id")
                         pool_syms = apm.get_cfd_top60_symbols() + apm.get_wild_61_160_symbols() + apm.get_micro_161_plus_symbols()
-                        uniq_syms = list(dict.fromkeys(pool_syms)).__getitem__(slice(0, 140))
-                        pd_hits = []
+                        uniq_syms = list(dict.fromkeys(pool_syms))[:140]
+                        tot_u = max(1, len(uniq_syms))
+                        pd_hits, done_u = [], 0
                         with ThreadPoolExecutor(max_workers=12) as pdp:
                             for r_pd in pdp.map(apm.scan_macro_pump_dump_coin, uniq_syms):
+                                done_u += 1
                                 if r_pd: pd_hits.append(r_pd)
+                                if p_mid and (done_u % 28 == 0 or done_u == tot_u):
+                                    pct_u = int(done_u * 100 / tot_u)
+                                    bars_u = "█" * (pct_u // 10) + "░" * (10 - pct_u // 10)
+                                    try:
+                                        requests.post(tg_url(tok, "editMessageText"), json={"chat_id": cid, "message_id": p_mid, "text": f"🚀 <b>Skanuję {tot_u} par (4 wzorce Pump & Dump)...</b>\n<code>[{bars_u}] {pct_u}%</code> ({done_u}/{tot_u})", "parse_mode": "HTML"}, timeout=10)
+                                    except Exception: pass
                         if not pd_hits:
                             requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": "🚀 <b>Skan Pump & Dump (140 par):</b> Brak obecnie aktywnej paraboli typu RAVEUSDT (wzrost >120% lub skok wolumenu >4.5x).", "parse_mode": "HTML"}, timeout=15)
                         else:

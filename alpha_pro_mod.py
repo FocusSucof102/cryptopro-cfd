@@ -275,48 +275,86 @@ def scan_macro_pump_dump_coin(sym):
     try:
         d1 = _apm_klines("BITGET", sym, "1d", 40)
         h4 = _apm_klines("BITGET", sym, "4h", 60)
+        m15 = _apm_klines("BITGET", sym, "15m", 40)
         if not d1 or not h4 or len(d1["c"]) < 25 or len(h4["c"]) < 30:
             return None
-        c1, h1, l1, o1, v1 = d1["c"], d1["h"], d1["l"], d1["o"], d1["v"]
-        cur = float(c1.__getitem__(-1))
-        avg_v20 = sum(float(x) for x in v1.__getitem__(slice(-21, -1))) / 20.0
-        v_now = float(v1.__getitem__(-1))
-        vol_mult = v_now / max(1e-9, avg_v20)
 
-        low_14d = min(float(x) for x in l1.__getitem__(slice(-15, -1)))
-        high_14d = max(float(x) for x in h1.__getitem__(slice(-14, None)))
+        c1, h1, l1, v1 = d1["c"], d1["h"], d1["l"], d1["v"]
+        cur = float(c1[-1])
+        avg_v20 = sum(float(x) for x in v1[-21:-1]) / 20.0
+        vol_mult_1d = float(v1[-1]) / max(1e-9, avg_v20)
+
+        low_14d = min(float(x) for x in l1[-15:-1])
+        high_14d = max(float(x) for x in h1[-14:])
         pump_from_low = ((cur - low_14d) / max(1e-9, low_14d)) * 100.0
         max_pump_14d = ((high_14d - low_14d) / max(1e-9, low_14d)) * 100.0
         drop_from_peak = ((high_14d - cur) / max(1e-9, high_14d)) * 100.0
 
-        # MA7 na 4H jako wyzwalacz zalamania paraboli
         c4 = [float(x) for x in h4["c"]]
-        ma7_4h = sum(c4.__getitem__(slice(-7, None))) / 7.0
-        atr_4h = sum(abs(float(h4["h"].__getitem__(j)) - float(h4["l"].__getitem__(j))) for j in range(-14, 0)) / 14.0
+        ma7_4h = sum(c4[-7:]) / 7.0
+        ma25_4h = sum(c4[-25:]) / 25.0
+        atr_4h = sum(abs(float(h4["h"][j]) - float(h4["l"][j])) for j in range(-14, 0)) / 14.0
 
-        # SCENARIUSZ A: Wczesna faza MEGA-PUMP (wybicie z bazy + wolumen >= 4.5x)
-        if 25.0 <= pump_from_low <= 110.0 and vol_mult >= 4.5 and cur > ma7_4h:
-            sl = round(cur - max(cur * 0.04, atr_4h * 2.0), 6)
+        # WZORZEC 1: Cicha akumulacja + wczesne wybicie z bazy (LONG, wzor BLZ/LOOM)
+        if 15.0 <= pump_from_low <= 85.0 and vol_mult_1d >= 4.0 and cur > ma7_4h and cur > ma25_4h:
+            sl = round(cur - max(cur * 0.035, atr_4h * 1.8), 6)
             sd = abs(cur - sl)
             return {
-                "symbol": sym, "side": "LONG", "mode": "🚀 EARLY_MEGA_PUMP",
-                "win_prob": min(84, int(62 + vol_mult * 2)),
-                "alpha_tag": f"PUMP +{pump_from_low:.0f}% | VOL {vol_mult:.1f}x",
+                "symbol": sym, "side": "LONG", "mode": "🚀 WZORZEC 1: WYBICIE Z BAZY",
+                "win_prob": min(84, int(62 + vol_mult_1d * 2)),
+                "alpha_tag": f"BAZA +{pump_from_low:.0f}% | VOL {vol_mult_1d:.1f}x",
                 "price": cur, "entry": cur, "stop": sl,
                 "tp": [round(cur + sd * m, 6) for m in (1.5, 2.5, 4.0, 6.0, 10.0)]
             }
 
-        # SCENARIUSZ B: Faza DUMP po paraboli (wzrost > 120% w 14d, odrzucenie szczytu o min. 15% i zejscie pod MA7 4H)
-        if max_pump_14d >= 120.0 and 15.0 <= drop_from_peak <= 55.0 and cur < ma7_4h:
+        # WZORZEC 2: Short-Squeeze Blow-Off Top z dlugim knotem szczytowym (SHORT, wzor TRB/CYBER)
+        peak_bar_h = max(float(x) for x in h4["h"][-6:])
+        peak_bar_c = float(h4["c"][-1])
+        wick_drop_4h = ((peak_bar_h - peak_bar_c) / max(1e-9, peak_bar_h)) * 100.0
+        if max_pump_14d >= 100.0 and wick_drop_4h >= 8.0 and cur < ma7_4h:
+            sl = round(peak_bar_h * 1.015, 6)
+            sd = abs(sl - cur)
+            if 0.015 <= (sd / max(1e-9, cur)) <= 0.18:
+                return {
+                    "symbol": sym, "side": "SHORT", "mode": "🩸 WZORZEC 2: BLOW-OFF TOP (SQUEEZE)",
+                    "win_prob": min(87, int(66 + min(16, wick_drop_4h))),
+                    "alpha_tag": f"RAJD +{max_pump_14d:.0f}% | KNOT -{wick_drop_4h:.1f}%",
+                    "price": cur, "entry": cur, "stop": sl,
+                    "tp": [round(cur - sd * m, 6) for m in (1.5, 2.5, 4.0, 6.0, 10.0)]
+                }
+
+        # WZORZEC 3: Wielodniowe wykrwawianie po paraboli (SHORT, wzor OM/RAVE)
+        if max_pump_14d >= 120.0 and 15.0 <= drop_from_peak <= 60.0 and cur < ma7_4h and cur < ma25_4h:
             sl = round(cur + max(cur * 0.05, atr_4h * 2.2), 6)
             sd = abs(sl - cur)
             return {
-                "symbol": sym, "side": "SHORT", "mode": "🩸 PARABOLIC_DUMP",
-                "win_prob": min(86, int(65 + min(15, max_pump_14d / 20))),
+                "symbol": sym, "side": "SHORT", "mode": "🩸 WZORZEC 3: PARABOLIC RUG BLEED",
+                "win_prob": min(85, int(64 + min(15, max_pump_14d / 20))),
                 "alpha_tag": f"SZCZYT +{max_pump_14d:.0f}% | SPADEK -{drop_from_peak:.0f}%",
                 "price": cur, "entry": cur, "stop": sl,
                 "tp": [round(cur - sd * m, 6) for m in (1.5, 2.5, 4.0, 6.0, 10.0)]
             }
+
+        # WZORZEC 4: Szybki Flash Pump & Dump wewnatrz dnia na 15m (SHORT, pompy grupowe)
+        if m15 and len(m15["c"]) >= 25:
+            v15 = [float(x) for x in m15["v"]]
+            avg_v15 = sum(v15[-25:-4]) / 21.0
+            max_v15 = max(v15[-4:]) / max(1e-9, avg_v15)
+            low_2h = min(float(x) for x in m15["l"][-8:-2])
+            high_2h = max(float(x) for x in m15["h"][-4:])
+            flash_pct = ((high_2h - low_2h) / max(1e-9, low_2h)) * 100.0
+            retrace_15m = ((high_2h - cur) / max(1e-9, high_2h - low_2h)) if high_2h > low_2h else 0.0
+            if flash_pct >= 8.0 and max_v15 >= 5.5 and retrace_15m >= 0.40:
+                sl = round(high_2h * 1.01, 6)
+                sd = abs(sl - cur)
+                if 0.01 <= (sd / max(1e-9, cur)) <= 0.12:
+                    return {
+                        "symbol": sym, "side": "SHORT", "mode": "⚡ WZORZEC 4: FLASH PUMP & DUMP (15M)",
+                        "win_prob": min(83, int(63 + max_v15)),
+                        "alpha_tag": f"IMPULS +{flash_pct:.1f}% | VOL {max_v15:.1f}x",
+                        "price": cur, "entry": cur, "stop": sl,
+                        "tp": [round(cur - sd * m, 6) for m in (1.5, 2.5, 4.0, 6.0, 10.0)]
+                    }
         return None
     except Exception:
         return None
