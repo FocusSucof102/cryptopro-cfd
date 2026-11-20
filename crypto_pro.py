@@ -1633,7 +1633,24 @@ def fast_active_positions_loop():
 
 
 
+
+def github_auto_sync_loop():
+    import subprocess, py_compile, glob
+    while True:
+        time.sleep(300)
+        try:
+            st_out = subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()
+            if st_out:
+                for f in glob.glob("*.py"):
+                    py_compile.compile(f, doraise=True)
+                subprocess.run(["git", "add", "*.py", "*.md", ".gitignore"], check=False)
+                subprocess.run(["git", "commit", "-m", f"Live-sync {datetime.now().strftime('%Y-%m-%d %H:%M')}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(["git", "push", "origin", "main"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
 if __name__ == "__main__":
+    threading.Thread(target=github_auto_sync_loop, daemon=True).start()
     threading.Thread(target=cfd_live_bg_loop, daemon=True).start()
     threading.Thread(target=fast_active_positions_loop, daemon=True).start()
     main()
