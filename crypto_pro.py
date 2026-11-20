@@ -688,29 +688,38 @@ def log_cfd_hits_to_file(hits_list, src="LIVE"):
     if not hits_list: return
     try:
         cur_h = json.load(open(CFD_HIST_FILE)) if os.path.exists(CFD_HIST_FILE) else []
-        now_s = datetime.now().strftime("%d.%m %H:%M")
+        now_dt = datetime.now()
+        now_s = now_dt.strftime("%d.%m %H:%M")
         now_ep = int(time.time())
+        btc_r, btc_lbl = get_live_btc_regime() if "get_live_btc_regime" in globals() else (0, "NEUTRAL")
+        sess_s = apm.get_session_badge() if "apm" in globals() else ""
+        t_st = atm.get_tuner_params() if "atm" in globals() else {}
         for h in hits_list:
             en_v = float(h.get("entry", 0) or 0)
             sl_v = float(h.get("stop", 0) or 0)
             sd_v = abs(en_v - sl_v) or (en_v * 0.01)
+            sl_pct = round((sd_v / max(1e-9, en_v)) * 100.0, 2)
             td_v = 1 if h.get("side") == "LONG" else -1
             tps_v = h.get("tp", [])
             tp1_v = float(tps_v.__getitem__(0)) if len(tps_v) > 0 else round(en_v + td_v * sd_v * 1.0, 6)
             tp2_v = float(tps_v.__getitem__(1)) if len(tps_v) > 1 else round(en_v + td_v * sd_v * 1.5, 6)
             tp3_v = float(tps_v.__getitem__(2)) if len(tps_v) > 2 else round(en_v + td_v * sd_v * 2.5, 6)
+            mtf_str = apm.get_mtf_status_line("BITGET", h.get("symbol", ""), h.get("side", "LONG")) if "apm" in globals() else ""
+            mtf_cnt = mtf_str.count("✅")
             cur_h.append({
-                "ts": now_s, "ts_epoch": now_ep, "src": src,
+                "ts": now_s, "ts_epoch": now_ep, "hour": now_dt.hour, "src": src,
                 "sym": h.get("symbol", ""), "side": h.get("side", ""),
-                "prob": h.get("win_prob", 75),
+                "prob": h.get("win_prob", 75), "alpha_tag": h.get("alpha_tag", ""),
+                "btc_regime": btc_r, "session": sess_s, "mtf_cnt": mtf_cnt, "mtf_raw": mtf_str,
+                "sl_dist_pct": sl_pct, "tuner_prob": t_st.get("min_prob", 62), "tuner_sl_mult": t_st.get("sl_mult", 1.0),
                 "entry": fmt_p(en_v).strip(), "sl": fmt_p(sl_v).strip(),
                 "en_f": en_v, "sl_f": sl_v, "tp1_f": tp1_v, "tp2_f": tp2_v, "tp3_f": tp3_v,
-                "status": "OPEN", "res_r": 0.0, "dur_str": "0m"
+                "status": "OPEN", "res_r": 0.0, "dur_str": "0m",
+                "mfe_r": 0.0, "mae_r": 0.0, "fail_reason": "PENDING", "closed_final": False
             })
-        json.dump(cur_h.__getitem__(slice(-40, None)), open(CFD_HIST_FILE, "w"), indent=2)
+        json.dump(cur_h.__getitem__(slice(-100, None)), open(CFD_HIST_FILE, "w"), indent=2)
     except Exception:
         pass
-
 
 def fmt_dur_mins(mins):
     mins = max(1, int(mins))
@@ -735,7 +744,6 @@ def audit_cfd_history_1m():
         tp2 = float(r.get("tp2_f") or (en + td * sd * 1.5))
         tp3 = float(r.get("tp3_f") or (en + td * sd * 2.5))
         t0 = int(r.get("ts_epoch") or (now_ep - 3600))
-        # Pobieramy swiece 1-minutowe (1m) pokrywajace czas od wykrycia sygnalu (max 1000 min = ~16.5h na 1 zapytanie)
         mins_elapsed = max(2, min(990, (now_ep - t0) // 60 + 2))
         tf_aud = "1m" if (now_ep - t0) <= 58000 else "5m"
         lim_aud = mins_elapsed if tf_aud == "1m" else min(990, (now_ep - t0) // 300 + 2)
@@ -745,37 +753,51 @@ def audit_cfd_history_1m():
         hit_tp1, hit_tp2 = False, False
         cur_sl = sl
         final_st, final_r, hit_idx = None, 0.0, len(kl1["c"]) - 1
+        max_fav_r, max_adv_r = 0.0, 0.0
+        post_sl_reached_tp1 = False
 
-        # Idziemy minuta po minucie przez kazdy knot High/Low swiecy 1m
         for i in range(len(kl1["c"])):
             bar_t = int(kl1["t"].__getitem__(i) / 1000)
             if bar_t < t0: continue
             hi, lo = float(kl1["h"].__getitem__(i)), float(kl1["l"].__getitem__(i))
-            # Najpierw sprawdzamy czy przypadkowy pik nie wybil SL w tej minucie (pesymistyczny, realistyczny wariant!)
+            fav_p = hi if td == 1 else lo
+            adv_p = lo if td == 1 else hi
+            cur_fav_r = round((td * (fav_p - en)) / sd, 2)
+            cur_adv_r = round((td * (adv_p - en)) / sd, 2)
+            if cur_fav_r > max_fav_r: max_fav_r = cur_fav_r
+            if cur_adv_r < max_adv_r: max_adv_r = cur_adv_r
+
+            if final_st == "❌ SL":
+                if (hi >= tp1) if td == 1 else (lo <= tp1):
+                    post_sl_reached_tp1 = True
+                continue
+
             sl_hit = (lo <= cur_sl) if td == 1 else (hi >= cur_sl)
             if sl_hit:
-                if hit_tp2:
-                    final_st, final_r = "💰 BE+1.5R", 0.80
-                elif hit_tp1:
-                    final_st, final_r = "🟡 BE+1R", 0.50
-                else:
-                    final_st, final_r = "❌ SL", -1.00
+                if hit_tp2: final_st, final_r = "💰 BE+1.5R", 0.80
+                elif hit_tp1: final_st, final_r = "🟡 BE+1R", 0.50
+                else: final_st, final_r = "❌ SL", -1.00
                 hit_idx = i
-                break
-            # Sprawdzamy kolejne progi TP na knotach 1m
-            if not hit_tp1 and ((hi >= tp1) if td == 1 else (lo <= tp1)):
-                hit_tp1 = True
+                continue
+
+            if not hit_tp1 and ((hi >= tp1) if td == 1 else (lo <= tp1)): hit_tp1 = True
             if not hit_tp2 and ((hi >= tp2) if td == 1 else (lo <= tp2)):
                 hit_tp2 = True
-                # Po +1.5R przestawiamy SL na Break-Even +0.1R
                 cur_sl = en + td * 0.1 * sd
             if (hi >= tp3) if td == 1 else (lo <= tp3):
                 final_st, final_r, hit_idx = "🏆 TP3", 2.00, i
                 break
 
+        r["mfe_r"], r["mae_r"] = max_fav_r, max_adv_r
         dur_m = max(1, (int(kl1["t"].__getitem__(hit_idx) / 1000) - t0) // 60)
         if final_st:
-            r["status"], r["res_r"], r["dur_str"], r["closed_final"] = final_st, final_r, fmt_dur_mins(dur_m), True
+            if final_r > 0: reason = "CLEAN_WIN"
+            elif post_sl_reached_tp1: reason = "SL_WICK_REVERSAL"
+            elif max_fav_r >= 0.75: reason = "MISSED_TP_REVERSAL"
+            elif r.get("btc_regime", 0) != 0 and ((side == "LONG" and r.get("btc_regime") == -1) or (side == "SHORT" and r.get("btc_regime") == 1)):
+                reason = "COUNTER_BTC_FAIL"
+            else: reason = "DIRECT_STOPOUT"
+            r["status"], r["res_r"], r["dur_str"], r["fail_reason"], r["closed_final"] = final_st, final_r, fmt_dur_mins(dur_m), reason, True
         else:
             c_last = float(kl1["c"].__getitem__(-1))
             live_r = round((td * (c_last - en)) / sd, 2)
@@ -788,32 +810,37 @@ def audit_cfd_history_1m():
 def render_cfd_history_table():
     rows = audit_cfd_history_1m()
     if not rows:
-        return "📊 <b>AUDYT TRAFIEN LIVE CFD (SWIECE 1M)</b>\n<i>Brak jeszcze zapisanych trafien. Gdy radar znajdzie okazje, system zweryfikuje ja minuta po minucie na swiecach 1m!</i>"
-    lines = ["Para    | Typ | Wynik     | Czas  | R", "--------+-----+-----------+-------+------"]
-    wins_c, loss_c, sum_r, win_mins, loss_mins = 0, 0, 0.0, [], []
+        return "📊 <b>AUDYT I TELEMETRIA LIVE CFD (1M)</b>\n<i>Brak jeszcze zapisanych trafien. Kazdy kolejny sygnal zapisze pelny kontekst (BTC, sesje, MTF, MFE/MAE) do analizy!</i>"
+    lines = ["Para   | Typ | Wynik     | MFE   | Czas", "-------+-----+-----------+-------+------"]
     for r in reversed(rows.__getitem__(slice(-15, None))):
-        s_col = str(r.get("sym", "")).replace("USDT", "")[:7].ljust(7)
+        s_col = str(r.get("sym", "")).replace("USDT", "")[:6].ljust(6)
         d_col = ("🟢L" if r.get("side") == "LONG" else "🔴S").ljust(3)
         st_col = str(r.get("status", "OPEN"))[:9].ljust(9)
-        du_col = str(r.get("dur_str", "-"))[:5].ljust(5)
-        rv = float(r.get("res_r", 0.0))
-        r_col = f"{rv:+.1f}R"
-        lines.append(f"{s_col} | {d_col} | {st_col} | {du_col} | {r_col}")
-    for r in rows:
-        st = str(r.get("status", ""))
-        rv = float(r.get("res_r", 0.0))
-        if not st.startswith("⏳"):
-            sum_r += rv
-            if rv > 0: wins_c += 1
-            elif rv < 0: loss_c += 1
-    tot_closed = wins_c + loss_c
-    wr_pct = round(wins_c / max(1, tot_closed) * 100.0, 1)
-    summary = (
-        f"\n📈 <b>PODSUMOWANIE AUDYTU 1M (z uwzglednieniem pikow):</b>\n"
-        f"• Zamkniete: <b>{tot_closed}</b> (Zysk: <b>{wins_c}</b> | Strata SL: <b>{loss_c}</b>)\n"
-        f"• Skutecznosc (WR): <b>{wr_pct}%</b> | Bilans netto: <b>{sum_r:+.2f}R</b>"
+        mfe_col = f"+{float(r.get('mfe_r', 0)):.1f}R".ljust(5)
+        du_col = str(r.get("dur_str", "-"))[:5]
+        lines.append(f"{s_col} | {d_col} | {st_col} | {mfe_col} | {du_col}")
+
+    closed = [r for r in rows if r.get("closed_final")]
+    wins = [r for r in closed if float(r.get("res_r", 0)) > 0]
+    losses = [r for r in closed if float(r.get("res_r", 0)) < 0]
+    sum_r = sum(float(r.get("res_r", 0)) for r in closed)
+    wr = round(len(wins) / max(1, len(closed)) * 100.0, 1)
+
+    # Analiza przyczyn strat (Co nie zadzialalo)
+    wicks = sum(1 for r in losses if r.get("fail_reason") == "SL_WICK_REVERSAL")
+    missed = sum(1 for r in losses if r.get("fail_reason") == "MISSED_TP_REVERSAL")
+    c_btc = sum(1 for r in losses if r.get("fail_reason") == "COUNTER_BTC_FAIL")
+    mtf4 = [r for r in closed if int(r.get("mtf_cnt", 0)) >= 3]
+    wr_mtf4 = round(sum(1 for r in mtf4 if float(r.get("res_r", 0)) > 0) / max(1, len(mtf4)) * 100.0, 0) if mtf4 else 0
+
+    diag = (
+        f"\n📈 <b>BILANS ({len(closed)} zamknietych):</b> WR <b>{wr}%</b> | Netto: <b>{sum_r:+.2f}R</b>\n"
+        f"🔬 <b>DIAGNOSTYKA IMPROVEMENTU (Co nie zadzialalo):</b>\n"
+        f"• Szpilki SL (potem TP1): <b>{wicks}</b> | Uciekl zysk (>0.75R): <b>{missed}</b>\n"
+        f"• Straty pod prad BTC: <b>{c_btc}</b> | WR dla MTF ≥3/4: <b>{wr_mtf4:.0f}%</b> ({len(mtf4)} poz.)"
     )
-    return f"📊 <b>AUDYT TRAFIEN LIVE CFD (KNOTY 1M)</b>\n<pre>" + "\n".join(lines) + "</pre>" + summary
+    return f"📊 <b>AUDYT I TELEMETRIA LIVE CFD (KNOTY 1M)</b>\n<pre>" + "\n".join(lines) + "</pre>" + diag
+
 def tg_menu(cid=None, tok=None, notice=""):
     if (not cid or not tok) and os.path.exists(TG_CONFIG_FILE):
         tc = json.load(open(TG_CONFIG_FILE))
