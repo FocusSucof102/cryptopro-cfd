@@ -69,17 +69,42 @@ def run_full_self_test():
     return f"8/8 ETAPOW OK | Pule: {len(t60)}/{len(w80)}/{len(m60)} | Tuner: {st['min_prob']}% | Baza: {hist_tot} HIST + {live_tot} LIVE"
 
 if __name__ == "__main__":
-    G, R, B, X = "\033[1;92m", "\033[1;91m", "\033[1m", "\033[0m"
+    import shutil, signal, textwrap, time
+
+    def draw_banner(is_ok, text_msg, clear_scr=False):
+        G, R, B, X = "\033[1;92m", "\033[1;91m", "\033[1m", "\033[0m"
+        col = G if is_ok else R
+        cols = max(36, shutil.get_terminal_size((48, 24)).columns)
+        inner_w = cols - 2
+        title_txt = "SELF-TEST: 8/8 TESTÓW OK!" if is_ok else "SELF-TEST: BŁĄD KRYTYCZNY!"
+        wrapped = textwrap.wrap(text_msg, width=max(20, inner_w - 2)) or [""]
+        top = "╔" + "═" * inner_w + "╗"
+        mid = "╠" + "═" * inner_w + "╣"
+        bot = "╚" + "═" * inner_w + "╝"
+        prefix = "\033[2J\033[H" if clear_scr else "\n"
+        out = [f"{prefix}{col}{top}", f"║{title_txt.center(inner_w)}║", mid]
+        for ln in wrapped:
+            out.append(f"║ {ln.ljust(inner_w - 2)} ║")
+        out.append(f"{bot}{X}\n")
+        print("\n".join(out), flush=True)
+
+    state = {"ok": True, "msg": ""}
+    def _on_resize(signum, frame):
+        if state["msg"]:
+            draw_banner(state["ok"], state["msg"], clear_scr=True)
+
+    if hasattr(signal, "SIGWINCH"):
+        signal.signal(signal.SIGWINCH, _on_resize)
+
     try:
         summary = run_full_self_test()
-        print(f"\n{G}╔══════════════════════════════════════════════════════╗")
-        print(f"║   ✅  SELF-TEST: WSZYSTKIE 8/8 TESTÓW OK!            ║")
-        print(f"╚══════════════════════════════════════════════════════╝{X}")
-        print(f"{G}{B}📊 {summary}{X}\n")
+        state["ok"], state["msg"] = True, summary
+        draw_banner(True, summary, clear_scr=False)
+        if "--watch" in sys.argv:
+            print("🔄 Obróć telefon, aby przetestować skalowanie (Ctrl+C lub 15s aby zakończyć)...")
+            time.sleep(15)
         sys.exit(0)
     except Exception as e:
-        print(f"\n{R}╔══════════════════════════════════════════════════════╗")
-        print(f"║   ❌  SELF-TEST: WYKRYTO BŁĄD KRYTYCZNY!             ║")
-        print(f"╚══════════════════════════════════════════════════════╝{X}")
-        print(f"{R}{B}⚠️  PRZYCZYNA: {e}{X}\n")
+        state["ok"], state["msg"] = False, f"PRZYCZYNA: {e}"
+        draw_banner(False, state["msg"], clear_scr=False)
         sys.exit(1)
