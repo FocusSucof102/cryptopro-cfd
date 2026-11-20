@@ -1,3 +1,10 @@
+import nzt_cortex_mod as nzt
+import meta_brain_mod as mbm
+import quantum_nash_mod as qnm
+import future_quantum_mod as fqm
+import evolution_lab_mod as elm
+import ai_quant_mod as aqm
+import inst_orderflow_mod as iom
 # ==============================================================================
 # [AI_GUARD_AND_CONTEXT] - OBOWIAZKOWE ZASADY DLA KAZDEGO AI CZYTAJACEGO TEN PLIK:
 # 1. OBOWIAZEK KONTEKSTU: Przed wprowadzeniem jakichkolwiek zmian w kodzie
@@ -8,7 +15,7 @@
 #    NATYCHMIAST ostrzez uzytkownika na samym poczatku odpowiedzi: podaj GDZIE i CO
 #    wycieklo oraz zlec natychmiastowa zmiane/uniewaznienie klucza!
 # 3. ARCHITEKTURA I GIELDY:
-#    - Zrodlo danych/API skanera: wylacznie BITGET USDT-FUTURES (TOP-60 >10M$).
+#    - Zrodlo danych/API skanera: wylacznie BITGET USDT-FUTURES (TOP-100 >10M$).
 #    - Platforma gry uzytkownika: BITBASE FUTURES / CFD (uwzgledniac przy prowizjach,
 #      dostepnosci par, dźwigni i minimalnych odleglosciach zlecen!).
 #    - Silnik: Smart Dual-Mode (LONG+SHORT), Auto-Tuner, Audytor 1M (MFE/MAE),
@@ -887,7 +894,7 @@ def render_cfd_history_table():
     rows = audit_cfd_history_1m()
     if not rows:
         lab_stats = []
-        for l_lbl, l_fn in [("Shadow TOP-60", "market_shadow_lab.json"), ("Wild 61-160", "wild_market_lab.json"), ("Micro 161+", "micro_market_lab.json")]:
+        for l_lbl, l_fn in [("Shadow TOP-100", "market_shadow_lab.json"), ("Wild 61-160", "wild_market_lab.json"), ("Micro 161+", "micro_market_lab.json")]:
             if os.path.exists(l_fn):
                 arr_l = json.load(open(l_fn))
                 lv_c = sum(1 for x in arr_l if x.get("data_type") == "LIVE_FORWARD")
@@ -1184,7 +1191,7 @@ def tg_listener():
                             requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": card_t, "parse_mode": "HTML", "reply_markup": kb_c}, timeout=15)
                     elif cb == "scan_cfd10":
                         kb_stop = {"inline_keyboard": [[{"text": "🛑 STOP / Reset Skanu", "callback_data": "scan_stop"}]]}
-                        m = requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": "⚡ <b>Skan CFD TOP-60 (Long/Short)...</b>\n<code>[░░░░░░░░░░] 0%</code>", "parse_mode": "HTML", "reply_markup": kb_stop}).json()
+                        m = requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": "⚡ <b>Skan CFD TOP-100 (Long/Short)...</b>\n<code>[░░░░░░░░░░] 0%</code>", "parse_mode": "HTML", "reply_markup": kb_stop}).json()
                         mid = m.get("result", {}).get("message_id")
                         def bg_cfd10():
                             global SCAN_STOP
@@ -1203,7 +1210,20 @@ def tg_listener():
                                         if sl_m_dyn != 1.0:
                                             td_w = 1 if h["side"] == "LONG" else -1
                                             h["stop"] = round(h["entry"] - td_w * abs(h["entry"] - h["stop"]) * sl_m_dyn, 6)
-                                        if h["symbol"] not in sam.get_bitbase_blacklist() and sdm.check_sniper_quality(h["side"], btc_d, fetch_klines("BITGET", h["symbol"], "15m", 5))[0] and apm.validate_cfd_order(h["entry"], h["stop"], h["price"]) and h.get("win_prob", 0) >= min_p_dyn:
+                                        ok_ob, ob_b, ob_tag = iom.get_orderflow_and_walls(h["symbol"], h["side"], h["entry"], h["tp"])
+                                        sl_k = (abs(h["entry"] - h["stop"]) / max(1e-9, h["entry"])) * 100.0
+                                        ok_k, kb, kt = aqm.evaluate_knn_pattern(h["side"], h.get("win_prob", 55), 25, sl_k, datetime.now().hour)
+                                        ld, lt = aqm.get_lead_lag_impulse(sys.modules[__name__], h["symbol"])
+                                        lb = 5 if ((h["side"] == "LONG" and ld == 1) or (h["side"] == "SHORT" and ld == -1)) else 0
+                                        kl_q = fetch_klines("BITGET", h["symbol"], "15m", 35)
+                                        reg_k, reg_b, reg_tag = elm.detect_volatility_regime(kl_q)
+                                        _, ok_ent, ent_tag = fqm.calc_shannon_entropy(kl_q)
+                                        ok_rt, rt_b, rt_tag = fqm.detect_whale_iceberg_and_redteam(h["side"], kl_q)
+                                        qw_b, qw_tag = qnm.quantum_wave_interference(h["side"], h["entry"], h["tp"].__getitem__(0), h["stop"], kl_q)
+                                        ok_nash, nash_b, nash_tag = qnm.detect_nash_predator_trap(h["side"], kl_q)
+                                        if not (ok_ob and ok_k and reg_k != "CHOP" and ok_ent and ok_rt and ok_nash):
+                                            nzt.record_rejected_hypothesis(h["symbol"], h["side"], h["entry"], h["stop"], f"{reg_k}|{ent_tag}|{rt_tag}")
+                                        if ok_ob and ok_k and reg_k != "CHOP" and ok_ent and ok_rt and ok_nash and h["symbol"] not in sam.get_bitbase_blacklist() and sdm.check_sniper_quality(h["side"], btc_d, fetch_klines("BITGET", h["symbol"], "15m", 5))[0] and apm.validate_cfd_order(h["entry"], h["stop"], h["price"]) and h.get("win_prob", 0) >= min_p_dyn:
                                             return h
                                     return None
                                 done_c = 0
@@ -1215,7 +1235,7 @@ def tg_listener():
                                         if mid and (done_c % 6 == 0 or done_c == tot_c):
                                             pct = int((done_c / tot_c) * 100)
                                             bar = "█" * (pct // 10) + "░" * (10 - pct // 10)
-                                            try: requests.post(tg_url(tok, "editMessageText"), json={"chat_id": cid, "message_id": mid, "text": f"⚡ <b>Skan CFD TOP-60 (12x Turbo):</b> ({done_c}/{tot_c})\n<code>[{bar}] {pct}%</code>", "parse_mode": "HTML", "reply_markup": kb_stop}, timeout=4)
+                                            try: requests.post(tg_url(tok, "editMessageText"), json={"chat_id": cid, "message_id": mid, "text": f"⚡ <b>Skan CFD TOP-100 (12x Turbo):</b> ({done_c}/{tot_c})\n<code>[{bar}] {pct}%</code>", "parse_mode": "HTML", "reply_markup": kb_stop}, timeout=4)
                                             except Exception: pass
                                         res_h = fut.result()
                                         if res_h: hits.append(res_h)
@@ -1226,19 +1246,19 @@ def tg_listener():
                                     return
                                 if mid:
                                     try:
-                                        requests.post(tg_url(tok, "editMessageText"), json={"chat_id": cid, "message_id": mid, "text": "✅ <b>Skan CFD TOP-60 zakonczony!</b>\n<code>[██████████] 100%</code>", "parse_mode": "HTML"}, timeout=15)
+                                        requests.post(tg_url(tok, "editMessageText"), json={"chat_id": cid, "message_id": mid, "text": "✅ <b>Skan CFD TOP-100 zakonczony!</b>\n<code>[██████████] 100%</code>", "parse_mode": "HTML"}, timeout=15)
                                     except Exception:
                                         pass
                                 btc_cm = str(btc_lbl).replace("<", "&lt;").replace(">", "&gt;")
                                 if not hits:
-                                    nh_txt = f"⠀⠀🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥\n⛔ <b>BRAK AKTYWNYCH SYGNAŁÓW</b> ⛔\n⠀⠀🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥\n⚡ <b>CFD TOP-60</b> ({btc_cm})\nBrak czystego wejscia w tym kwadransie (próg Auto-Tunera: <b>{min_p_dyn}%</b>). Czekamy na impuls bez otwierania pozycji na sile."
+                                    nh_txt = f"⠀⠀🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥\n⛔ <b>BRAK AKTYWNYCH SYGNAŁÓW</b> ⛔\n⠀⠀🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥\n⚡ <b>CFD TOP-100</b> ({btc_cm})\nBrak czystego wejscia w tym kwadransie (próg Auto-Tunera: <b>{min_p_dyn}%</b>). Czekamy na impuls bez otwierania pozycji na sile."
                                     requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": nh_txt, "parse_mode": "HTML", "reply_markup": {"inline_keyboard": [[{"text": "🔄 Skanuj ponownie", "callback_data": "scan_cfd10"}, {"text": "⬅ Menu", "callback_data": "back_menu"}]]}}, timeout=15)
                                 else:
                                     hits.sort(key=lambda x: -x.get("win_prob", 0))
                                     top3_m = hits.__getitem__(slice(0, 2))
                                     LATEST["hits"] = top3_m
                                     log_cfd_hits_to_file(top3_m, "SKAN")
-                                    requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": f"⠀⠀🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n✅ <b>SĄ AKTYWNE OKAZJE!</b> ✅\n⠀⠀🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n⚡ <b>SYGNALY CFD TOP-60</b> | {btc_cm}\nZnaleziono <b>{len(top3_m)}</b> najlepsze okazje:", "parse_mode": "HTML"}, timeout=15)
+                                    requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": f"⠀⠀🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n✅ <b>SĄ AKTYWNE OKAZJE!</b> ✅\n⠀⠀🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n⚡ <b>SYGNALY CFD TOP-100</b> | {btc_cm}\nZnaleziono <b>{len(top3_m)}</b> najlepsze okazje:", "parse_mode": "HTML"}, timeout=15)
                                     for h in top3_m:
                                         tps_m = h.get("tp", [])
                                         tp1_m = tps_m.__getitem__(0) if len(tps_m) > 0 else h["entry"]
@@ -1730,7 +1750,7 @@ def _append_lab_sample(lab_file, src_tag, sym, side, prob, pd_tag, en_v, sl_v):
 def run_wild_market_probe():
     """Realizuje logike: run wild market probe."""
     wd.beat('market_labs_30m', 'Start sondy Wild/Micro')
-    for sym in apm.get_wild_61_160_symbols()[:10]:
+    for sym in apm.get_wild_61_160_symbols()[:25]:
         tag = apm.detect_weird_move("BITGET", sym)
         if tag:
             kl = fetch_klines("BITGET", sym, "15m", 20)
@@ -1742,7 +1762,7 @@ def run_wild_market_probe():
 
 def run_micro_market_probe():
     """Realizuje logike: run micro market probe."""
-    for sym in apm.get_micro_161_plus_symbols()[:10]:
+    for sym in apm.get_micro_161_plus_symbols()[:25]:
         cyc_t, _, pd_t = apm.detect_cyclical_and_pump_dump("BITGET", sym)
         if pd_t or cyc_t.startswith("CYCLIC_"):
             kl = fetch_klines("BITGET", sym, "15m", 20)
@@ -1754,7 +1774,9 @@ def run_micro_market_probe():
 
 def run_bg_macro_pump_dump():
     """Realizuje logike: run bg macro pump dump."""
-    wd.beat('macro_pump_dump_30m', 'Skan 140 par P&D')
+    elm.run_evolution_tournament()
+    mbm.learn_from_closed_history()
+    wd.beat('macro_pump_dump_30m', 'Skan 140 par P&D + Ewolucja')
     syms = apm.get_all_futures_symbols()[:140]
     with ThreadPoolExecutor(max_workers=12) as pool:
         for res in pool.map(apm.scan_macro_pump_dump_coin, syms):
@@ -1787,7 +1809,20 @@ def cfd_live_bg_loop():
                             if sl_m_l != 1.0:
                                 td_l = 1 if h["side"] == "LONG" else -1
                                 h["stop"] = round(h["entry"] - td_l * abs(h["entry"] - h["stop"]) * sl_m_l, 6)
-                            if h["symbol"] not in sam.get_bitbase_blacklist() and sdm.check_sniper_quality(h["side"], btc_d, fetch_klines("BITGET", h["symbol"], "15m", 5))[0] and apm.validate_cfd_order(h["entry"], h["stop"], h["price"]) and h.get("win_prob", 0) >= min_p_l:
+                            ok_ob, ob_b, ob_tag = iom.get_orderflow_and_walls(h["symbol"], h["side"], h["entry"], h["tp"])
+                            sl_k = (abs(h["entry"] - h["stop"]) / max(1e-9, h["entry"])) * 100.0
+                            ok_k, kb, kt = aqm.evaluate_knn_pattern(h["side"], h.get("win_prob", 55), 25, sl_k, datetime.now().hour)
+                            ld, lt = aqm.get_lead_lag_impulse(sys.modules[__name__], h["symbol"])
+                            lb = 5 if ((h["side"] == "LONG" and ld == 1) or (h["side"] == "SHORT" and ld == -1)) else 0
+                            kl_q = fetch_klines("BITGET", h["symbol"], "15m", 35)
+                            reg_k, reg_b, reg_tag = elm.detect_volatility_regime(kl_q)
+                            _, ok_ent, ent_tag = fqm.calc_shannon_entropy(kl_q)
+                            ok_rt, rt_b, rt_tag = fqm.detect_whale_iceberg_and_redteam(h["side"], kl_q)
+                            qw_b, qw_tag = qnm.quantum_wave_interference(h["side"], h["entry"], h["tp"].__getitem__(0), h["stop"], kl_q)
+                            ok_nash, nash_b, nash_tag = qnm.detect_nash_predator_trap(h["side"], kl_q)
+                            if not (ok_ob and ok_k and reg_k != "CHOP" and ok_ent and ok_rt and ok_nash):
+                                nzt.record_rejected_hypothesis(h["symbol"], h["side"], h["entry"], h["stop"], f"{reg_k}|{ent_tag}|{rt_tag}")
+                            if ok_ob and ok_k and reg_k != "CHOP" and ok_ent and ok_rt and ok_nash and h["symbol"] not in sam.get_bitbase_blacklist() and sdm.check_sniper_quality(h["side"], btc_d, fetch_klines("BITGET", h["symbol"], "15m", 5))[0] and apm.validate_cfd_order(h["entry"], h["stop"], h["price"]) and h.get("win_prob", 0) >= min_p_l:
                                 return h
                     except Exception: pass
                     return None
@@ -1801,6 +1836,16 @@ def cfd_live_bg_loop():
                     _append_lab_sample(SHADOW_LAB_FILE, f"SHADOW_T{sh.get('win_prob',50)}", sh["symbol"], sh["side"], sh.get("win_prob", 50), sh.get("alpha_tag", "SNIPER"), sh["entry"], sh["stop"])
                 audit_cfd_history_1m(SHADOW_LAB_FILE)
                 new_hits = [x for x in new_hits if x.get("win_prob", 0) >= min_p_l]
+                last_alert_ts = SEEN_CFD_SIGS.get("__LAST_ANY_ALERT__", 0)
+                if not new_hits and (time.time() - last_alert_ts) >= 21600:
+                    silver_cands = [x for x in shadow_hits if x.get("win_prob", 0) >= 53]
+                    if silver_cands:
+                        silver_cands.sort(key=lambda x: -x.get("win_prob", 0))
+                        best_s = dict(silver_cands[0])
+                        best_s["alpha_tag"] = "🥈 ANTY-PRZESTÓJ (SILVER 0.5x STAWKI) | " + best_s.get("alpha_tag", "")
+                        new_hits = [best_s]
+                if new_hits:
+                    SEEN_CFD_SIGS["__LAST_ANY_ALERT__"] = time.time()
                 if new_hits:
                     new_hits.sort(key=lambda x: -x.get("win_prob", 0))
                     top3_live = new_hits.__getitem__(slice(0, 2))
@@ -1845,7 +1890,7 @@ def cfd_live_bg_loop():
                         tok_h, cid_h = tc_h.get("token", "").strip(), tc_h.get("chat_id", "").strip()
                         if tok_h and cid_h:
                             tp_now = atm.get_tuner_params()
-                            tuner_line = f"\n🧠 <b>Auto-Tuner (Skan 45-100% | Alerty ≥{tp_now.get('min_prob', 58)}%):</b>\n📊 Poziomy: <code>{atm.get_all_tiers_summary()}</code>"
+                            tuner_line = f"\n{nzt.get_nzt_status_line(sys.modules[__name__])}\n{mbm.get_brain_summary_line()}\n🧠 <b>Auto-Tuner (Skan 45-100% | Alerty ≥{tp_now.get('min_prob', 58)}%):</b>\n📊 Poziomy: <code>{atm.get_all_tiers_summary()}</code>"
                             requests.post(tg_url(tok_h, "sendMessage"), json={"chat_id": cid_h, "text": f"⠀⠀🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥\n⛔ <b>BRAK AKTYWNYCH SYGNAŁÓW</b> ⛔\n⠀⠀🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥\n💓 <b>Puls CFD Live ({datetime.now().strftime('%H:%M')}):</b> Przeskanowano <b>{len(top_cfd)}</b> par | {btc_c} | Brak nowych okazji.{tuner_line}", "parse_mode": "HTML", "disable_notification": True}, timeout=15)
                 cycle_cnt += 1
         except Exception as err:

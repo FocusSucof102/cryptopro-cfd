@@ -9,7 +9,10 @@ JSON_DEFAULTS = {
     "market_shadow_lab.json": [],
     "wild_market_lab.json": [],
     "micro_market_lab.json": [],
-    "qa_health_history.json": []
+    "qa_health_history.json": [],
+    "evolution_champion.json": {},
+    "meta_brain_weights.json": {},
+    "nzt_synapses.json": {}
 }
 
 def run_self_healing_repair():
