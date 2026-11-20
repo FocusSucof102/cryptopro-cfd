@@ -1694,6 +1694,13 @@ def cfd_live_bg_loop():
                 else:
                     # Co 2 cykle (co 30 min) wysylamy cichy Puls Zycia, zeby bylo wiadomo ze radar CFD pracuje
                     if cycle_cnt % 2 == 0:
+                        try:
+                            if os.path.exists("qa_health_history.json"):
+                                unres = [x for x in json.load(open("qa_health_history.json", encoding="utf-8")) if x.get("status") == "UNRESOLVED"]
+                                if unres and tok_l and cid_l:
+                                    lu = unres[-1]
+                                    requests.post(tg_url(tok_l, "sendMessage"), json={"chat_id": cid_l, "text": f"⚠️ <b>PRZYPOMNIENIE QA:</b> Nienaprawiony błąd z <code>{lu.get('ts')}</code> (<code>{lu.get('location')}</code>): <code>{str(lu.get('error'))[:160]}</code>", "parse_mode": "HTML"}, timeout=10)
+                        except Exception: pass
                         run_wild_market_probe()
                         audit_cfd_history_1m(WILD_LAB_FILE)
                         run_micro_market_probe()

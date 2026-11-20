@@ -92,9 +92,47 @@ def run_smart_audit():
     return f"QA 3.0 PASS | Wolne: {free_mb}MB | {res_8}"
 
 if __name__ == "__main__":
+    import urllib.request
+    from datetime import datetime
+
+    QA_FILE = "qa_health_history.json"
     G, R, X = "\033[1;92m", "\033[1;91m", "\033[0m"
+
+    def send_tg_qa(msg_html):
+        try:
+            if os.path.exists("tg_config.json"):
+                tc = json.load(open("tg_config.json", encoding="utf-8"))
+                tok, cid = tc.get("token", "").strip(), tc.get("chat_id", "").strip()
+                if tok and cid:
+                    u = f"https://telegram.org{tok}/sendMessage"
+                    data = json.dumps({"chat_id": cid, "text": msg_html, "parse_mode": "HTML"}).encode("utf-8")
+                    urllib.request.urlopen(urllib.request.Request(u, data=data, headers={"Content-Type": "application/json"}), timeout=10)
+        except Exception:
+            pass
+
+    def push_qa_github():
+        try:
+            subprocess.run(["git", "add", "-f", QA_FILE, ".gitignore"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["git", "commit", "-m", f"QA Log {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["git", "push", "origin", "main"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
+    hist = json.load(open(QA_FILE, encoding="utf-8")) if os.path.exists(QA_FILE) else []
+    now_s = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    unresolved = [x for x in hist if x.get("status") == "UNRESOLVED"]
+
     try:
         res = run_smart_audit()
+        fixed_cnt = 0
+        for it in unresolved:
+            it["status"], it["fixed_at"] = "RESOLVED", now_s
+            fixed_cnt += 1
+        hist.append({"ts": now_s, "status": "PASS", "summary": res, "fixed_previous": fixed_cnt})
+        json.dump(hist[-100:], open(QA_FILE, "w", encoding="utf-8"), indent=2)
+        if fixed_cnt > 0:
+            send_tg_qa(f"✅ <b>NAPRAWA POTWIERDZONA (QA 3.0 PASS)</b>\n🕒 <code>{now_s}</code> | Zamknięto błędy: <b>{fixed_cnt}</b>")
+            push_qa_github()
         print(f"\n{G}+--------------------------------------------------+")
         print(f"|   ✅ PROFESJONALNY AUDYT QA 3.0: ZERO BŁĘDÓW!    |")
         print(f"+--------------------------------------------------+")
@@ -104,22 +142,24 @@ if __name__ == "__main__":
     except Exception as exc:
         tb_str = traceback.format_exc()
         m = re.findall(r'File "([^"]+)", line (\d+)', tb_str)
-        ctx_lines = []
+        ctx_lines, loc_str = [], "nieznana"
         if m:
-            err_file, err_line_s = m[-1]; err_line = int(err_line_s)
+            err_file, err_line_s = m[-1]
+            err_line = int(err_line_s)
+            loc_str = f"{os.path.basename(err_file)}:{err_line}"
             if os.path.exists(err_file):
                 all_l = open(err_file, encoding="utf-8", errors="ignore").readlines()
-                s_i, e_i = max(0, err_line - 4), min(len(all_l), err_line + 3)
-                for idx_l in range(s_i, e_i):
+                for idx_l in range(max(0, err_line - 4), min(len(all_l), err_line + 3)):
                     mark = ">>" if (idx_l + 1) == err_line else "  "
                     ctx_lines.append(f"{mark} {idx_l+1}: {all_l[idx_l].rstrip()}")
-        log_tail = "".join(open("bot_bg.log", encoding="utf-8", errors="ignore").readlines()[-10:]) if os.path.exists("bot_bg.log") else ""
+        err_msg = f"{type(exc).__name__}: {exc}"
+        hist.append({"ts": now_s, "status": "UNRESOLVED", "location": loc_str, "error": err_msg})
+        json.dump(hist[-100:], open(QA_FILE, "w", encoding="utf-8"), indent=2)
+        push_qa_github()
+        send_tg_qa(f"🚨 <b>ALARM QA 3.0 — NIENAPRAWIONY BŁĄD!</b>\n🕒 <code>{now_s}</code> | 📍 <code>{loc_str}</code>\n❌ <code>{err_msg[:200]}</code>")
         print(f"\n{R}================ [RAPORT BLEDU DO WKLEJENIA] ================")
-        print(f"BLAD: {type(exc).__name__}: {exc}")
-        if ctx_lines:
-            print("KOD WOKOL BLEDU:\n" + "\n".join(ctx_lines))
+        print(f"BLAD: {err_msg}")
+        if ctx_lines: print("KOD WOKOL BLEDU:\n" + "\n".join(ctx_lines))
         print("TRACEBACK:\n" + tb_str.strip())
-        if log_tail.strip():
-            print("OSTATNIE LOGI:\n" + log_tail.strip())
         print(f"============================================================={X}\n")
         sys.exit(1)
