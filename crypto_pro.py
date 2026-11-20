@@ -1654,6 +1654,7 @@ def cfd_live_bg_loop():
                         audit_cfd_history_1m(WILD_LAB_FILE)
                         run_micro_market_probe()
                         audit_cfd_history_1m(MICRO_LAB_FILE)
+                        run_bg_macro_pump_dump()
                         btc_c = str(btc_lbl).replace("<", "&lt;").replace(">", "&gt;")
                         tc_h = json.load(open(TG_CONFIG_FILE)) if os.path.exists(TG_CONFIG_FILE) else {}
                         tok_h, cid_h = tc_h.get("token", "").strip(), tc_h.get("chat_id", "").strip()

@@ -20,3 +20,10 @@
 Plik `.gitignore` blokuje wysyłanie wszelkich plików `.json`, `.csv` oraz `.log` (`tg_config.json`, stan portfela i historia trafień pozostają wyłącznie lokalnie na urządzeniu w `~/downloads`).
 
 Pełny zapis wszystkich wdrożonych zmian od początku projektu znajduje się w pliku **[CHANGELOG.md](./CHANGELOG.md)**.
+
+## 🧪 Pliki Badawcze i Telemetria (Eksportowane Automatycznie)
+- `cfd_live_history.json` — Główna historia sygnałów Live CFD z telemetrią `MFE/MAE` i diagnozą przyczyn strat.
+- `market_shadow_lab.json` — Próbka badawcza dla płynnego koszyka `TOP-60` (w tym niższe progi `45–61%`).
+- `wild_market_lab.json` — Próbka badawcza dla średnich/dzikich par `61–160` z detektorem anomalii wolumenu i knotów.
+- `micro_market_lab.json` — Próbka badawcza dla niszowych par `161+` z detektorem cykliczności wybić.
+- `tuner_state.json` — Aktualny stan i historia korekt samooptymalizującego się `Auto-Tunera`.

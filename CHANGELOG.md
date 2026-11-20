@@ -48,3 +48,12 @@
 - Skanowanie wszystkich ~500 niszowych mikrotokentów z małą płynnością (zbyt duże spready i stop-hunty).
 - Twarda blokada tylko jednego kierunku (`Tylko SHORT` lub `Tylko LONG`).
 - Stare przyciski z pierwszej wersji menu (nieużywane w handlu CFD).
+
+## Etap 7: Laboratoria Rynkowe 24/7, Macro Pump & Dump (4H/1D) i Praca w Tle Androida
+- **Rozbudowa Audytora 1M (`MFE / MAE` + Przyczyny Strat):** Automatyczna klasyfikacja każdego zamkniętego sygnału (`CLEAN_WIN`, `SL_WICK_REVERSAL`, `MISSED_TP_REVERSAL`, `COUNTER_BTC_FAIL`), obsługa pozycji powyżej 16,5h na świecach `5m` oraz tabela opłacalności niższych progów procentowych (`45-54%`, `55-61%`, `62%+`) **netto po prowizjach BitBase Futures (`-0.07R`)**.
+- **Trzy Ciche Laboratoria Badawcze (z podziałem `HIST_BACKFILL` vs `LIVE_FORWARD`):**
+  1. `market_shadow_lab.json` (`TOP-60`, obrót `>10M$`) — analiza odrzuconych setupów z niższą punktacją.
+  2. `wild_market_lab.json` (`TOP 61–160`, obrót `1M$–10M$`) — detektor manipulacji i polowań na SL (`VOL_SPIKE`, `LONG_WICK_HUNT`).
+  3. `micro_market_lab.json` (`TOP 161+`, obrót `<1M$`) — detektor cykliczności wybić godzinowych (`CYCLIC_XH`).
+- **Skaner & Auto-Radar `Macro Pump & Dump (4H/1D)`:** Przycisk `🚀 Pump & Dump` w menu Telegrama oraz skan w tle co 30 min dla 140 kontraktów (wykrywanie wczesnych wybić z bazy `LONG` oraz załamań po paraboli typu `RAVEUSDT` pod `MA7 4H` dla `SHORT`).
+- **Stabilizacja 24/7 w Androidzie (`termux-wake-lock`):** Utrzymywanie procesów przy zminimalizowanym oknie Termuxa oraz ciągły eksport zanonimizowanych plików badawczych na GitHub co 5 minut.
