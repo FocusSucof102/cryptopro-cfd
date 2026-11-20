@@ -34,5 +34,11 @@
     "status": "UNRESOLVED",
     "location": "py_compile.py:150",
     "error": "PyCompileError: Sorry: IndentationError: unexpected indent (chart_mod.py, line 172)"
+  },
+  {
+    "ts": "2026-11-20 18:43:16",
+    "status": "UNRESOLVED",
+    "location": "py_compile.py:150",
+    "error": "PyCompileError: Sorry: IndentationError: unexpected indent (chart_mod.py, line 173)"
   }
 ]
