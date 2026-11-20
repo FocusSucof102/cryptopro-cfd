@@ -22,6 +22,7 @@ from decimal import Decimal, ROUND_DOWN
 import crypto_pro as cp
 
 def calc_plan(ex, sym, capital, risk_pct, max_lev, entry=None, stop=None, side=None):
+    """Wylicza wielkosc pozycji, bezpieczna dzwignie, margin i TP1-TP5. Parametry: ex, sym, capital, risk_pct, max_lev, entry, stop, side."""
     ta = None
     try:
         if hasattr(cp, "cm"): ta = cp.cm.full_analysis(ex, sym)

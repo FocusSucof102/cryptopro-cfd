@@ -25,6 +25,7 @@ import crypto_pro as cp
 DEMO_FILE = "demo_sim.json"
 
 def load_demo():
+    """Realizuje logike: load demo."""
     if os.path.exists(DEMO_FILE):
         try:
             d = json.load(open(DEMO_FILE))
@@ -34,9 +35,11 @@ def load_demo():
     return None
 
 def save_demo(d):
+    """Realizuje logike: save demo. Parametry: d."""
     json.dump(d, open(DEMO_FILE, "w"), indent=2)
 
 def start_demo_24h():
+    """Realizuje logike: start demo 24h."""
     ex = cp.load_settings().get("exchange", "BINANCE")
     hits = [x for x in cp.LATEST.get("hits", []) if isinstance(x, dict)]
     if not hits:
@@ -46,6 +49,8 @@ def start_demo_24h():
         # Jesli w tym kwadransie brak scislego przeciecia z trendem BTC, bierzemy najlepsze sygnaly ze skanu glownego lub obserwowanych
         hits = [x for x in cp.LATEST.get("hits", []) if isinstance(x, dict)]
     if not hits:
+        syms = apm.get_cfd_top60_symbols()
+        btc_d, _ = cp.get_live_btc_regime() if hasattr(cp, "get_live_btc_regime") else (1, "")
         for ex_fb in ("BITGET", "BITBASE"):
             for sym in syms.__getitem__(slice(0, 25)):
                 try:
@@ -56,7 +61,7 @@ def start_demo_24h():
                     av = cp.atr(h1["h"], h1["l"], h1["c"]).__getitem__(-1) or (cl * 0.01)
                     side = "LONG" if btc_d >= 0 else "SHORT"
                     td = 1 if side == "LONG" else -1
-                    hits.append({"symbol": sym, "side": side, "win_prob": 76, "entry": cl, "stop": cl - td * 1.8 * av, "price": cl, "is_trig": True, "req_cap": 10.0})
+                    hits.append({"symbol": sym, "side": side, "win_prob": 76, "entry": cl, "stop": cl - td * 1.8 * av, "tp": [cl + td * 1.8 * av * m for m in (1.0, 1.5, 2.5, 3.5, 5.0)], "price": cl, "is_trig": True, "req_cap": 10.0})
                     if len(hits) >= 6: break
                 except Exception: pass
             if hits:
@@ -92,6 +97,7 @@ def start_demo_24h():
     return sim
 
 def update_demo_24h():
+    """Realizuje logike: update demo 24h."""
     sim = load_demo()
     if not sim: return None
     now_ts = int(time.time())
@@ -127,7 +133,7 @@ def update_demo_24h():
                 if all(p["hit_tps"]): p["close_reason"] = "🏆 PELNE 5R"
                 elif any(p["hit_tps"]): p["close_reason"] = "🛡️ SL na BE (Zysk)"
                 else:
-                    p["realized_pnl"] = round(-p["risk_usdt"] - fee_cl, 2)
+                    p["realized_pnl"] = round(-p["risk_usdt"] - 0.5, 2)
                     p["close_reason"] = "🛑 STOP LOSS (-1R)"
 
         if expired and not p["closed"]:
@@ -145,6 +151,7 @@ def update_demo_24h():
     return sim
 
 def get_demo_report():
+    """Realizuje logike: get demo report."""
     sim = update_demo_24h()
     if not sim: return None
     rem_h = round(max(0, sim["end_ts"] - int(time.time())) / 3600.0, 1)
@@ -164,6 +171,7 @@ def get_demo_report():
     return {"exchange": sim["exchange"], "start_str": sim["start_str"], "rem_h": rem_h, "equity": equity, "total_pnl": total_pnl, "pnl_pct": round(total_pnl / sim["initial_cap"] * 100.0, 2), "wins": wins, "losses": losses, "win_rate": win_rate, "positions": sim["positions"]}
 
 def hourly_demo_pulse():
+    """Realizuje logike: hourly demo pulse."""
     sim = load_demo()
     if not sim or sim.get("finished"):
         return
@@ -192,6 +200,7 @@ import io
 from PIL import Image, ImageDraw
 
 def analyze_hold_potential(ex, sym, side, cur_price, tp_targets):
+    """Realizuje logike: analyze hold potential. Parametry: ex, sym, side, cur_price, tp_targets."""
     h4 = cp.fetch_klines(ex, sym, "4h", 60)
     d1 = cp.fetch_klines(ex, sym, "1d", 60)
     if not h4 or not d1:
@@ -211,6 +220,7 @@ def analyze_hold_potential(ex, sym, side, cur_price, tp_targets):
     return {"hold_prob": hold_prob, "eta_tp": eta_str, "verdict": verdict}
 
 def build_demo_chart_png(rep):
+    """Realizuje logike: build demo chart png. Parametry: rep."""
     if not rep or not rep.get("positions"): return None
     pos = rep["positions"]
     W, H = 760, 110 + len(pos) * 44
@@ -242,6 +252,7 @@ def build_demo_chart_png(rep):
 DEMO_PRO_FILE = "demo_sim_pro.json"
 
 def load_demo_pro():
+    """Realizuje logike: load demo pro."""
     if os.path.exists(DEMO_PRO_FILE):
         try:
             d = json.load(open(DEMO_PRO_FILE))
@@ -251,16 +262,19 @@ def load_demo_pro():
     return None
 
 def save_demo_pro(d):
+    """Realizuje logike: save demo pro. Parametry: d."""
     json.dump(d, open(DEMO_PRO_FILE, "w"), indent=2)
 
 def start_demo_pro_24h():
+    """Realizuje logike: start demo pro 24h."""
     ex = "BITGET"
     btc_d, _ = cp.get_live_btc_regime() if hasattr(cp, "get_live_btc_regime") else (0, "")
     syms = apm.get_cfd_top60_symbols()
     hits = []
     for sym in syms:
         try:
-            h = cp._scan_one_coin(ex, sym, 1000.0, 1.5, 20)
+            res_sc = cp._scan_one_coin((ex, sym, 1.0, {}, ["adx", "macro", "vol"], 1000.0, 1.5))
+            h = res_sc[1] if isinstance(res_sc, tuple) and res_sc[0] == "hit" else None
             if h and isinstance(h, dict) and apm.validate_cfd_order(h['entry'], h['stop'], h['price']):
                 if btc_d != 0 and ((h["side"] == "LONG" and btc_d != 1) or (h["side"] == "SHORT" and btc_d != -1)):
                     continue
@@ -279,7 +293,7 @@ def start_demo_pro_24h():
                     av = cp.atr(h1["h"], h1["l"], h1["c"]).__getitem__(-1) or (cl * 0.01)
                     side = "LONG" if btc_d >= 0 else "SHORT"
                     td = 1 if side == "LONG" else -1
-                    hits.append({"symbol": sym, "side": side, "win_prob": 78, "entry": cl, "stop": cl - td * 1.8 * av, "price": cl, "is_trig": True, "req_cap": 10.0})
+                    hits.append({"symbol": sym, "side": side, "win_prob": 78, "entry": cl, "stop": cl - td * 1.8 * av, "tp": [cl + td * 1.8 * av * m for m in (1.0, 1.5, 2.5, 3.5, 5.0)], "price": cl, "is_trig": True, "req_cap": 10.0})
                     if len(hits) >= 6: break
                 except Exception:
                     pass
@@ -314,6 +328,7 @@ def start_demo_pro_24h():
     return sim
 
 def update_demo_pro_24h():
+    """Realizuje logike: update demo pro 24h."""
     sim = load_demo_pro()
     if not sim: return None
     now_ts = int(time.time())
@@ -368,7 +383,7 @@ def update_demo_pro_24h():
                     p["realized_pnl"] = round(p["realized_pnl"] + p["risk_usdt"] * 0.05 - fee_cl, 2)
                     p["close_reason"] = "🛡️ 50% TP + BE+ (Zysk)"
                 else:
-                    p["realized_pnl"] = round(-p["risk_usdt"] - fee_cl, 2)
+                    p["realized_pnl"] = round(-p["risk_usdt"] - 0.5, 2)
                     p["close_reason"] = "🛑 STOP LOSS (-1R)"
 
         if expired and not p["closed"]:
@@ -386,6 +401,7 @@ def update_demo_pro_24h():
     return sim
 
 def get_demo_pro_report():
+    """Realizuje logike: get demo pro report."""
     sim = update_demo_pro_24h()
     if not sim: return None
     rem_h = round(max(0, sim["end_ts"] - int(time.time())) / 3600.0, 1)

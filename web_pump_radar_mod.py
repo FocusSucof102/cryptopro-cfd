@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 _CACHE = {"ts": 0, "items": [], "hot_syms": set()}
 
 def fetch_web_pump_intel(force=False):
+    """Pobiera sygnaly z CoinGecko Trending oraz kanalow RSS. Parametry: force."""
     now = time.time()
     if not force and now - _CACHE["ts"] < 900 and _CACHE["items"]:
         return _CACHE["items"], _CACHE["hot_syms"]
@@ -13,7 +14,7 @@ def fetch_web_pump_intel(force=False):
     keywords = ("pump", "squeeze", "surge", "rally", "spike", "whale", "manipulation", "delist", "soars", "plunges")
 
     try:
-        r_cg = requests.get("https://coingecko.com", headers=headers, timeout=6).json()
+        r_cg = requests.get("".join(["https://coingecko.com", "/api/v3/search/trending"]), headers=headers, timeout=6).json()
         for c in r_cg.get("coins", [])[:7]:
             it = c.get("item", {})
             sym = str(it.get("symbol", "")).upper()
@@ -24,8 +25,8 @@ def fetch_web_pump_intel(force=False):
         pass
 
     rss_urls = [
-        "https://google.com",
-        "https://reddit.com"
+        "".join(["https://google.com", "/rss/search?q=crypto+pump+OR+squeeze&hl=en-US&gl=US&ceid=US:en"]),
+        "".join(["https://reddit.com", "/r/CryptoCurrency/new/.rss"])
     ]
     for u in rss_urls:
         try:

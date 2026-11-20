@@ -28,6 +28,7 @@ HTTP_SESS = requests.Session()
 os.makedirs("bt_cache", exist_ok=True)
 
 def fetch_all_available_1h(sym, start_year=2020, progress_cb=None):
+    """Realizuje logike: fetch all available 1h. Parametry: sym, start_year, progress_cb."""
     cpath = f"bt_cache/{sym}_{start_year}_fast.json"
     if os.path.exists(cpath) and (time.time() - os.path.getmtime(cpath) < 86400):
         try:
@@ -72,6 +73,7 @@ def fetch_all_available_1h(sym, start_year=2020, progress_cb=None):
     return None
 
 def build_bt_chart_png(res):
+    """Realizuje logike: build bt chart png. Parametry: res."""
     eq = res.get("equity_curve", [])
     yr_items = sorted(res.get("yearly", {}).items())
     if len(eq) < 2: return None
@@ -128,6 +130,7 @@ def build_bt_chart_png(res):
 BTC_REGIME_CACHE = {}
 
 def get_btc_regime_map(start_year=2020):
+    """Realizuje logike: get btc regime map. Parametry: start_year."""
     if start_year in BTC_REGIME_CACHE:
         return BTC_REGIME_CACHE[start_year]
     btc = fetch_all_available_1h("BTCUSDT", start_year)
@@ -142,6 +145,7 @@ def get_btc_regime_map(start_year=2020):
     return reg
 
 def calc_rsi(c, p=14):
+    """Realizuje logike: calc rsi. Parametry: c, p."""
     res = [50.0] * len(c)
     if len(c) <= p: return res
     gains, losses = [0.0], [0.0]
@@ -158,6 +162,7 @@ def calc_rsi(c, p=14):
     return res
 
 def run_backtest_2020(sym="BTCUSDT", start_year=2020, init_cap=1000.0, risk_pct=1.0, progress_cb=None):
+    """Realizuje logike: run backtest 2020. Parametry: sym, start_year, init_cap, risk_pct, progress_cb."""
     sym = sym.strip().upper()
     if not sym.endswith("USDT"): sym += "USDT"
     btc_reg = {}
@@ -262,6 +267,7 @@ def run_backtest_2020(sym="BTCUSDT", start_year=2020, init_cap=1000.0, risk_pct=
     }
 
 def run_multi_backtest_2020(syms, start_year=2020, init_cap=1000.0, progress_cb=None):
+    """Realizuje logike: run multi backtest 2020. Parametry: syms, start_year, init_cap, progress_cb."""
     all_y, all_m, stats, per_c, tw, tl, tb = {}, {}, [], init_cap / len(syms), 0, 0, 0
     d1, d2 = "9999-12-31", "0000-01-01"
     for i, s in enumerate(syms):
@@ -281,6 +287,7 @@ def run_multi_backtest_2020(syms, start_year=2020, init_cap=1000.0, progress_cb=
     return {"symbol": f"PORTFEL {len(stats)} MONET", "date_from": d1, "date_to": d2, "bars": tb, "init_cap": init_cap, "final_cap": fcap, "net_pct": round((fcap-init_cap)/init_cap*100, 1), "wins": tw, "losses": tl, "win_rate": round(tw/max(1, tw+tl)*100, 1), "profit_factor": 1.6, "max_dd": 12.0, "yearly": all_y, "monthly": all_m, "avg_month": round((fcap-init_cap)/max(1, len(all_m)), 2), "equity_curve": eq, "coin_stats": stats}
 
 def run_cfd_turbo_2020(syms, start_year=2020, init_cap=1000.0):
+    """Realizuje logike: run cfd turbo 2020. Parametry: syms, start_year, init_cap."""
     all_d = {}
     for s in syms:
         d = fetch_all_available_1h(s, start_year)
@@ -388,6 +395,7 @@ def run_cfd_turbo_2020(syms, start_year=2020, init_cap=1000.0):
     }
 
 def run_rotation_top3_2020(syms, start_year=2020, init_cap=1000.0):
+    """Realizuje logike: run rotation top3 2020. Parametry: syms, start_year, init_cap."""
     all_d = {}
     for s in syms:
         d = fetch_all_available_1h(s, start_year)

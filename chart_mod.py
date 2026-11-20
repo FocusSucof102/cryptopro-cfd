@@ -25,6 +25,7 @@ import crypto_pro as cp
 DEFAULT_OPTS = {"ema": True, "smc": True, "levels": True, "vol": True, "hurst": True, "rsi": True, "macd": True, "chop": True}
 
 def get_chart_opts():
+    """Realizuje logike: get chart opts."""
     opts = dict(DEFAULT_OPTS)
     saved = cp.load_settings().get("chart_opts", {})
     for k in DEFAULT_OPTS:
@@ -32,6 +33,7 @@ def get_chart_opts():
     return opts
 
 def toggle_chart_opt(key):
+    """Realizuje logike: toggle chart opt. Parametry: key."""
     c = cp.load_settings()
     opts = get_chart_opts()
     if key == "all":
@@ -44,6 +46,7 @@ def toggle_chart_opt(key):
     return opts
 
 def calc_rsi_series(c, p=14):
+    """Realizuje logike: calc rsi series. Parametry: c, p."""
     res = [50.0] * len(c)
     for i in range(p + 1, len(c)):
         sub = c[i-p:i+1]
@@ -54,6 +57,7 @@ def calc_rsi_series(c, p=14):
     return res
 
 def calc_macd_series(c):
+    """Realizuje logike: calc macd series. Parametry: c."""
     e12, e26 = cp.ema(c, 12), cp.ema(c, 26)
     macd = [round(a - b, 5) for a, b in zip(e12, e26)]
     sig = [round(x, 5) for x in cp.ema(macd, 9)]
@@ -61,6 +65,7 @@ def calc_macd_series(c):
     return macd, sig, hist
 
 def calc_chop_series(h, l, c, p=14):
+    """Realizuje logike: calc chop series. Parametry: h, l, c, p."""
     res = [50.0] * len(c)
     tr = [h[0] - l[0]] + [max(h[i] - l[i], abs(h[i] - c[i-1]), abs(l[i] - c[i-1])) for i in range(1, len(c))]
     for i in range(p, len(c)):
@@ -73,6 +78,7 @@ def calc_chop_series(h, l, c, p=14):
 
 def calc_hurst_osc(c, p=20):
     # Oscylator pozycji ceny w kanale zmiennosci (-250% do +250% jak na zrzucie)
+    """Realizuje logike: calc hurst osc. Parametry: c, p."""
     res = [0.0] * len(c)
     for i in range(p, len(c)):
         hi, lo = max(c[i-p:i+1]), min(c[i-p:i+1])
@@ -82,6 +88,7 @@ def calc_hurst_osc(c, p=20):
     return res
 
 def analyze_smc(h, l, c):
+    """Realizuje logike: analyze smc. Parametry: h, l, c."""
     sh, sl = [], []
     for i in range(2, len(c) - 2):
         if h[i] > h[i-1] and h[i] > h[i-2] and h[i] >= h[i+1] and h[i] >= h[i+2]: sh.append(h[i])
@@ -104,6 +111,7 @@ def analyze_smc(h, l, c):
     return {"struct": struct, "fvg": fvg, "bos_hi": last_sh, "bos_lo": last_sl}
 
 def full_analysis(ex, sym):
+    """Realizuje logike: full analysis. Parametry: ex, sym."""
     h1 = cp.fetch_klines(ex, sym, "1h", 120)
     d1 = cp.fetch_klines(ex, sym, "1d", 60)
     if not h1: return None
@@ -138,6 +146,7 @@ def full_analysis(ex, sym):
     }
 
 def build_chart_buf(ex, sym):
+    """Renderuje wielopanelowy wykres swiecowy PNG (SMC/EMA/RSI). Parametry: ex, sym."""
     ta = full_analysis(ex, sym)
     if not ta: return None, None
     opts = get_chart_opts()

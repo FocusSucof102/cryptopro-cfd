@@ -18,11 +18,13 @@
 #    ani twardej blokady tylko jednego kierunku handlu.
 # ==============================================================================
 import os, json, time
+from datetime import datetime
 import crypto_pro as cp
 
 POS_FILE = "active_positions.json"
 
 def load_positions():
+    """Realizuje logike: load positions."""
     if os.path.exists(POS_FILE):
         try:
             d = json.load(open(POS_FILE))
@@ -32,9 +34,11 @@ def load_positions():
     return []
 
 def save_positions(lst):
+    """Realizuje logike: save positions. Parametry: lst."""
     json.dump(lst, open(POS_FILE, "w"), indent=2)
 
 def add_position(ex, sym, side, entry, stop, tp_list, qty, margin, risk_usdt, lev):
+    """Realizuje logike: add position. Parametry: ex, sym, side, entry, stop, tp_list, qty, margin, risk_usdt, lev."""
     lst = load_positions()
     pid = f"{sym}_{int(time.time())}"
     lst.append({
@@ -49,6 +53,7 @@ def add_position(ex, sym, side, entry, stop, tp_list, qty, margin, risk_usdt, le
     return pid
 
 def toggle_tp_hit(pid, tp_idx):
+    """Realizuje logike: toggle tp hit. Parametry: pid, tp_idx."""
     lst = load_positions()
     cfg = cp.load_settings()
     for p in lst:
@@ -66,10 +71,12 @@ def toggle_tp_hit(pid, tp_idx):
     save_positions(lst)
 
 def close_position(pid):
+    """Realizuje logike: close position. Parametry: pid."""
     lst = [p for p in load_positions() if p["id"] != pid]
     save_positions(lst)
 
 def get_portfolio_summary():
+    """Realizuje logike: get portfolio summary."""
     cfg = cp.load_settings()
     cap = float(cfg.get("capital", 200.0))
     lst = load_positions()
@@ -98,6 +105,7 @@ def get_portfolio_summary():
 GUARD_COOLDOWN = {}
 
 def check_positions_guardian():
+    """Straznik 24/7: pilnuje Time-Stop, BE, Trailing SL i SMC."""
     lst = load_positions()
     if not lst: return
     changed = False
@@ -191,6 +199,7 @@ def check_positions_guardian():
         save_positions(lst)
 
 def check_new_opportunity_margin(new_side, est_margin=35.0, est_risk=15.0):
+    """Realizuje logike: check new opportunity margin. Parametry: new_side, est_margin, est_risk."""
     sm = get_portfolio_summary()
     cap = sm.get("capital", 1000.0) or 1000.0
     used_m = sm.get("used_margin", 0.0)
@@ -215,6 +224,7 @@ def check_new_opportunity_margin(new_side, est_margin=35.0, est_risk=15.0):
 DAILY_LOSS_STATE = {"date": "", "loss_usdt": 0.0, "alerted_pct": 0}
 
 def record_closed_trade_pnl(pnl_usdt):
+    """Realizuje logike: record closed trade pnl. Parametry: pnl_usdt."""
     today = datetime.now().strftime("%Y-%m-%d")
     if DAILY_LOSS_STATE["date"] != today:
         DAILY_LOSS_STATE.update({"date": today, "loss_usdt": 0.0, "alerted_pct": 0})

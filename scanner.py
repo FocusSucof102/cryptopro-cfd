@@ -37,6 +37,7 @@ watched_far = {}
 last_view_fn = None
 
 def on_resize(signum, frame):
+    """Realizuje logike: on resize. Parametry: signum, frame."""
     if last_view_fn:
         print("\033[2J\033[H", end="")
         last_view_fn()
@@ -48,11 +49,13 @@ except Exception:
 
 
 def load_settings():
+    """Realizuje logike: load settings."""
     if os.path.exists(SETTINGS_FILE):
         with open(SETTINGS_FILE, "r") as f: return json.load(f)
     return {"capital": 200.0, "risk_pct": 1.0, "top_n": 30}
 
 def change_settings():
+    """Realizuje logike: change settings."""
     cfg = load_settings()
     print(f"\n{C}{B}--- USTAWIENIA SKANERA ---{W}")
     c_in = input(f"Kapital w USDT [{cfg['capital']}]: ").strip()
@@ -65,6 +68,7 @@ def change_settings():
     print(f"{G}Zapisano nowe ustawienia!{W}")
 
 def get_json(url, **params):
+    """Realizuje logike: get json. Parametry: url."""
     for attempt in range(4):
         try:
             r = requests.get(url, params=params, timeout=TIMEOUT)
@@ -80,6 +84,7 @@ def get_json(url, **params):
     return None
 
 def send_telegram(msg):
+    """Realizuje logike: send telegram. Parametry: msg."""
     if not os.path.exists(TG_CONFIG_FILE): return
     with open(TG_CONFIG_FILE, "r") as f: cfg = json.load(f)
     token, chat_id = cfg.get("token", "").strip(), cfg.get("chat_id", "").strip()
@@ -90,6 +95,7 @@ def send_telegram(msg):
     except Exception: pass
 
 def setup_telegram():
+    """Realizuje logike: setup telegram."""
     if os.path.exists(TG_CONFIG_FILE): return
     print(f"\n{C}{B}--- KONFIGURACJA TELEGRAMA ---{W}")
     token = input("Podaj Bot Token (lub ENTER aby pominac): ").strip()
@@ -101,6 +107,7 @@ def setup_telegram():
     send_telegram("<b>Multi-Scanner</b>: Polaczenie aktywne!")
 
 def log_to_csv(row_dict):
+    """Realizuje logike: log to csv. Parametry: row_dict."""
     file_exists = os.path.exists(CSV_FILE)
     fields = ["timestamp","symbol","side","price","entry","stop_loss","tp_1R","tp_2R","tp_3R","tp_4R","tp_5R","qty","notional_usdt","leverage","filters"]
     with open(CSV_FILE, "a", newline="", encoding="utf-8") as f:
@@ -109,15 +116,18 @@ def log_to_csv(row_dict):
         w.writerow(row_dict)
 
 def fmt_p(val):
+    """Realizuje logike: fmt p. Parametry: val."""
     if val >= 10000: return f"{val:8.1f}"
     if val >= 1000:  return f"{val:8.2f}"
     if val >= 10:    return f"{val:8.3f}"
     return f"{val:8.4f}"
 
 def round_qty_down(qty, step):
+    """Realizuje logike: round qty down. Parametry: qty, step."""
     q, s = Decimal(str(qty)), Decimal(str(step))
     return float((q / s).to_integral_value(rounding=ROUND_DOWN) * s) if s > 0 else 0.0
 def get_market_meta(top_n):
+    """Realizuje logike: get market meta. Parametry: top_n."""
     info = get_json(BASE + "/fapi/v1/exchangeInfo")
     tickers = get_json(BASE + "/fapi/v1/ticker/24hr")
     if not info or not tickers: raise RuntimeError("Blad API Binance.")
@@ -140,6 +150,7 @@ def get_market_meta(top_n):
     return [t["symbol"] for t in valid[:top_n]], rules_map, {t["symbol"]: float(t["lastPrice"]) for t in valid[:top_n]}
 
 def fetch_klines(symbol, interval, limit):
+    """Realizuje logike: fetch klines. Parametry: symbol, interval, limit."""
     now_ms = int(time.time() * 1000)
     raw = get_json(BASE + "/fapi/v1/klines", symbol=symbol, interval=interval, limit=limit)
     if not raw: return None
@@ -148,6 +159,7 @@ def fetch_klines(symbol, interval, limit):
     return {"o": [float(k[1]) for k in raw], "h": [float(k[2]) for k in raw], "l": [float(k[3]) for k in raw], "c": [float(k[4]) for k in raw], "v": [float(k[5]) for k in raw]}
 
 def ema(v, p):
+    """Realizuje logike: ema. Parametry: v, p."""
     a = 2.0 / (p + 1.0)
     res, cur = [], v[0]
     for x in v:
@@ -156,6 +168,7 @@ def ema(v, p):
     return res
 
 def atr(h, l, c, p=ATR_N):
+    """Realizuje logike: atr. Parametry: h, l, c, p."""
     n = len(c)
     res = [0.0] * n
     tr = [h[0] - l[0]] + [max(h[i] - l[i], abs(h[i] - c[i-1]), abs(l[i] - c[i-1])) for i in range(1, n)]
@@ -167,6 +180,7 @@ def atr(h, l, c, p=ATR_N):
     return res
 
 def adx(h, l, c, p=14):
+    """Realizuje logike: adx. Parametry: h, l, c, p."""
     n = len(c)
     res = [0.0] * n
     tr, pdm, mdm = [0.0]*n, [0.0]*n, [0.0]*n
@@ -193,12 +207,15 @@ def adx(h, l, c, p=14):
     return res
 
 def get_trend(c):
+    """Realizuje logike: get trend. Parametry: c."""
     e20, e50 = ema(c, 20), ema(c, 50)
     return 1 if c[-1] > e20[-1] > e50[-1] else (-1 if c[-1] < e20[-1] < e50[-1] else 0)
 def get_cols():
+    """Realizuje logike: get cols."""
     return max(46, shutil.get_terminal_size((52, 24)).columns)
 
 def draw_box_table(title, col, rows):
+    """Realizuje logike: draw box table. Parametry: title, col, rows."""
     cols = get_cols()
     if cols >= 96:
         # Poziom: 12 kolumn + 13 kresek (razem dokladnie cols-1 znakow)
@@ -247,6 +264,7 @@ def draw_box_table(title, col, rows):
         print(f"{col}└{'─'*w_sym}┴─────┴──────┴{'─'*w_p}┴{'─'*w_e}┴{'─'*w_sl}┴────┘{W}")
 
 def draw_near_table(items):
+    """Realizuje logike: draw near table. Parametry: items."""
     cols = get_cols()
     fixed = 5 + 6 + 6
     avail = max(30, cols - 1 - fixed)
@@ -265,6 +283,7 @@ def draw_near_table(items):
     print(f"{C}└{'─'*w_sym}┴─────┴{'─'*w_p}┴──────┴{'─'*w_miss}┘{W}")
 
 def send_tg_card(h, is_demo=False):
+    """Realizuje logike: send tg card. Parametry: h, is_demo."""
     tp1, tp2, tp3, tp4, tp5 = h["tp"][0], h["tp"][1], h["tp"][2], h["tp"][3], h["tp"][4]
     ico = "🟢" if h["side"] == "LONG" else "🔴"
     tag = " [TEST WIZUALNY]" if is_demo else ""
@@ -285,6 +304,7 @@ def send_tg_card(h, is_demo=False):
     )
 
 def demo_visual(send_tg=True):
+    """Realizuje logike: demo visual. Parametry: send_tg."""
     global last_view_fn
     last_view_fn = lambda: demo_visual(send_tg=False)
     print(f"\n{C}{B}=== PODGLAD INTERFEJSU (EKRAN: {get_cols()} ZNAKOW) ==={W}")
@@ -300,6 +320,7 @@ def demo_visual(send_tg=True):
         print(f"\n{G}{B}Wyslano 1 testowa karte na Telegram (obrot nie wysle ponownie)!{W}")
 
 def scan_market():
+    """Realizuje logike: scan market."""
     cfg_s = load_settings()
     cap, rpct, top_n = cfg_s["capital"], cfg_s["risk_pct"], cfg_s["top_n"]
     enabled = json.load(open(CONFIG_FILE)).get("enabled_filters", ["adx","macro","vol"]) if os.path.exists(CONFIG_FILE) else ["adx","macro","vol"]
@@ -388,6 +409,7 @@ def scan_market():
     render_scan_results()
 
 def smart_input(prompt):
+    """Realizuje logike: smart input. Parametry: prompt."""
     sys.stdout.write(prompt)
     sys.stdout.flush()
     prev_cols = get_cols()
@@ -405,6 +427,7 @@ def smart_input(prompt):
             return sys.stdin.readline().strip()
 
 def fast_watch_far(seconds):
+    """Realizuje logike: fast watch far. Parametry: seconds."""
     end_t = time.time() + seconds
     while time.time() < end_t:
         if not watched_far:
@@ -429,6 +452,7 @@ def fast_watch_far(seconds):
                 send_telegram(f"✅ <b>W ZASIEGU GIELDY! | {sym} ({info['side']})</b>\nCena teraz: <code>{fmt_p(cur_p).strip()}</code>\nWejscie: <code>{fmt_p(info['entry']).strip()}</code> ({dev:.2f}%)\n<i>Odchylenie w normie - gielda przyjmie zlecenie!</i>")
 
 def main():
+    """Realizuje logike: main."""
     while True:
         s = load_settings()
         cols = get_cols()

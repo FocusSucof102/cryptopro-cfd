@@ -25,6 +25,7 @@ CACHE_DERIV = {}
 BTC_24H_RET = {"ts": 0, "ret": 0.0}
 
 def get_btc_24h_return(cp):
+    """Oblicza zwrot BTC (24h) z cache 3 min. Parametry: cp."""
     if time.time() - BTC_24H_RET["ts"] < 180:
         return BTC_24H_RET["ret"]
     kl = cp.fetch_klines("BITGET", "BTCUSDT", "1h", 26) or cp.fetch_klines("BITBASE", "BTCUSDT", "1h", 26)
@@ -35,6 +36,7 @@ def get_btc_24h_return(cp):
     return 0.0
 
 def get_derivatives_metrics(sym):
+    """Pobiera Funding Rate (%) i Open Interest (OI) z Bitget. Parametry: sym."""
     now = time.time()
     if sym in CACHE_DERIV and now - CACHE_DERIV[sym]["ts"] < 300:
         return CACHE_DERIV[sym]["data"]
@@ -59,6 +61,7 @@ def get_derivatives_metrics(sym):
     return out
 
 def detect_sweep_reclaim(kl):
+    """Wykrywa formacje Liquidity Sweep & Reclaim na 20 swiecach. Parametry: kl."""
     if not kl or len(kl["c"]) < 25: return 0
     h, l, c, v = kl["h"], kl["l"], kl["c"], kl["v"]
     lo20 = min(l.__getitem__(slice(-22, -2)))
@@ -73,6 +76,7 @@ def detect_sweep_reclaim(kl):
     return 0
 
 def get_session_badge():
+    """Zwraca etykiete aktywnej sesji (Londyn, NY, Weekend)."""
     hr = datetime.now().hour
     if 9 <= hr <= 12: return "🔥 SESJA LONDYN (Wysoka plynnosc)"
     if 14 <= hr <= 18: return "🔥 SESJA NOWY JORK (Szczyt wolumenu)"
@@ -81,12 +85,14 @@ def get_session_badge():
 
 def get_equity_risk_multiplier(pf_list):
     # Ochrona krzywej kapitalu: po 3 zamknietych stratach z rzedu tnie ryzyko o 50%
+    """Tnie ryzyko o 50% po serii 3 zamknietych strat z rzedu. Parametry: pf_list."""
     closed = [p for p in pf_list if p.get("status") == "CLOSED"]
     if len(closed) >= 3 and all(p.get("pnl", 0) < 0 for p in closed.__getitem__(slice(-3, None))):
         return 0.5
     return 1.0
 
 def evaluate_alpha(cp, sym, side, kl_1h):
+    """Ocenia jakosc sygnalu (Funding, RS vs BTC, Sweep, Squeeze). Parametry: cp, sym, side, kl_1h."""
     deriv = get_derivatives_metrics(sym)
     fr = deriv["funding_pct"]
     # Odrzucamy skrajnie przegrzane pozycje (Funding > +0.045% dla LONG lub < -0.045% dla SHORT)
@@ -121,6 +127,7 @@ def evaluate_alpha(cp, sym, side, kl_1h):
     return True, bonus, " | ".join(tags) if tags else f"FR {fr:+.3f}% | RS {rs_diff:+.1f}%"
 
 def detect_ttm_squeeze(kl):
+    """Wykrywa scisniecie BB wewnatrz Keltnera (TTM Squeeze). Parametry: kl."""
     if not kl or len(kl["c"]) < 25: return 0
     h, l, c, v = kl["h"], kl["l"], kl["c"], kl["v"]
     win = c.__getitem__(slice(-21, -1))
@@ -140,6 +147,7 @@ def detect_ttm_squeeze(kl):
 CACHE_TOP60 = {"ts": 0, "syms": []}
 
 def get_cfd_top60_symbols():
+    """Pobiera TOP-60 najplynniejszych par USDT-Futures (>10M$)."""
     now = time.time()
     if CACHE_TOP60["syms"] and now - CACHE_TOP60["ts"] < 1800:
         return CACHE_TOP60["syms"]
@@ -164,6 +172,7 @@ def get_cfd_top60_symbols():
     return fallback
 
 def validate_cfd_order(entry, stop, cur_price):
+    """Waliduje dystans zlecenia i SL (0.35%-6.5%) pod wymogi CFD. Parametry: entry, stop, cur_price."""
     if entry <= 0 or stop <= 0 or cur_price <= 0: return False
     sl_pct = abs(entry - stop) / entry * 100.0
     cur_diff_pct = abs(entry - cur_price) / cur_price * 100.0
@@ -173,6 +182,7 @@ def validate_cfd_order(entry, stop, cur_price):
     return True
 
 def get_mtf_status_line(ex, sym, side):
+    """Buduje pasek zgodnosci trendu MTF (15M|1H|4H|1D). Parametry: ex, sym, side."""
     import crypto_pro as cp
     td = 1 if side == "LONG" else -1
     res, ok_cnt = [], 0
@@ -193,6 +203,7 @@ def get_mtf_status_line(ex, sym, side):
     return f"📊 <b>MTF ({ok_cnt}/4):</b> " + " | ".join(res)
 
 def get_wild_61_160_symbols():
+    """Realizuje logike: get wild 61 160 symbols."""
     try:
         sl = chr(47)
         u = "".join(["https:", sl, sl, "api.", "bitget", ".com", sl, "api", sl, "v2", sl, "mix", sl, "market", sl, "tickers"])
@@ -209,8 +220,9 @@ def get_wild_61_160_symbols():
         return []
 
 def detect_weird_move(ex, sym):
+    """Realizuje logike: detect weird move. Parametry: ex, sym."""
     try:
-        kl = fetch_klines(ex, sym, "15m", 25)
+        kl = _apm_klines(ex, sym, "15m", 25)
         if not kl or len(kl["c"]) < 20: return ""
         o, h, l, c, v = kl["o"].__getitem__(-1), kl["h"].__getitem__(-1), kl["l"].__getitem__(-1), kl["c"].__getitem__(-1), kl["v"].__getitem__(-1)
         avg_v = sum(kl["v"].__getitem__(slice(-20, -1))) / 19.0
@@ -226,6 +238,7 @@ def detect_weird_move(ex, sym):
         return ""
 
 def get_micro_161_plus_symbols():
+    """Realizuje logike: get micro 161 plus symbols."""
     try:
         sl = chr(47)
         u = "".join(["https:", sl, sl, "api.", "bitget", ".com", sl, "api", sl, "v2", sl, "mix", sl, "market", sl, "tickers"])
@@ -242,10 +255,12 @@ def get_micro_161_plus_symbols():
         return []
 
 def _apm_klines(ex, sym, tf, lim):
+    """Realizuje logike: apm klines. Parametry: ex, sym, tf, lim."""
     import crypto_pro as cp
     return cp.fetch_klines(ex, sym, tf, lim)
 
 def detect_cyclical_and_pump_dump(ex, sym):
+    """Realizuje logike: detect cyclical and pump dump. Parametry: ex, sym."""
     try:
         kl = _apm_klines(ex, sym, "15m", 120)
         if not kl or len(kl["c"]) < 60: return "NO_DATA", 0.0, ""
@@ -273,6 +288,7 @@ def detect_cyclical_and_pump_dump(ex, sym):
 
 
 def get_all_futures_symbols():
+    """Realizuje logike: get all futures symbols."""
     try:
         sl = chr(47)
         u = "".join(["https:", sl, sl, "api.", "bitget", ".com", sl, "api", sl, "v2", sl, "mix", sl, "market", sl, "tickers"])
@@ -289,6 +305,7 @@ def get_all_futures_symbols():
         return get_cfd_top60_symbols()
 
 def scan_macro_pump_dump_coin(sym):
+    """Skanuje kontrakt pod katem 7 archetypow Pump & Dump. Parametry: sym."""
     try:
         d1 = _apm_klines("BITGET", sym, "1d", 40)
         h4 = _apm_klines("BITGET", sym, "4h", 60)
@@ -412,7 +429,7 @@ def scan_macro_pump_dump_coin(sym):
             sl = chr(47)
             u_fr = "".join(["https:", sl, sl, "api.", "bitget", ".com", sl, "api", sl, "v2", sl, "mix", sl, "market", sl, "current-fund-rate"])
             r_fr = SESS.get(u_fr, params={"productType": "USDT-FUTURES", "symbol": sym}, timeout=3).json()
-            fr_val = float(r_fr.get("data", [{}]).get("fundingRate", 0) or 0) * 100.0
+            fr_val = float((r_fr.get("data") or [{}])[0].get("fundingRate", 0) or 0) * 100.0
             if fr_val <= -0.15 and cur > ma7_4h:
                 sl_p = round(cur - max(cur * 0.025, atr_4h * 1.5), 6)
                 sd_p = abs(cur - sl_p)

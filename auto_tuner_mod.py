@@ -4,6 +4,7 @@ from datetime import datetime
 TUNER_FILE = "tuner_state.json"
 
 def get_tier_label(prob):
+    """Realizuje logike: get tier label. Parametry: prob."""
     p = int(prob or 0)
     if p >= 68: return "💎 PLATINUM (68%+)"
     if p >= 60: return "🥇 GOLD (60-67%)"
@@ -11,6 +12,7 @@ def get_tier_label(prob):
     return "🥉 BRONZE (45-51%)"
 
 def get_tuner_params():
+    """Realizuje logike: get tuner params."""
     default = {
         "min_prob": 60,
         "sl_mult": 1.0,
@@ -24,6 +26,7 @@ def get_tuner_params():
     return default
 
 def run_auto_tuner(hist_file="cfd_live_history.json"):
+    """Kalibruje prog min_prob i bufor SL na bazie wynikow 1m. Parametry: hist_file."""
     st = get_tuner_params()
     now = time.time()
     if now - st.get("last_tune_ts", 0) < 1800:

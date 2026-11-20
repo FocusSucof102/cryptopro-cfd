@@ -72,6 +72,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 
 def get_json(url, **params):
+    """Realizuje logike: get json. Parametry: url."""
     last_error = None
     for attempt in range(5):
         try:
@@ -91,6 +92,7 @@ def get_json(url, **params):
 
 
 def fetch_history(interval, wanted):
+    """Realizuje logike: fetch history. Parametry: interval, wanted."""
     cache_path = os.path.join(CACHE_DIR, f"{SYMBOL}_{interval}_{wanted}.json")
     if os.path.exists(cache_path):
         print(f"Wczytuję {interval} z pamięci lokalnej...")
@@ -140,6 +142,7 @@ def fetch_history(interval, wanted):
 
 
 def fetch_funding(start_ms, end_ms):
+    """Realizuje logike: fetch funding. Parametry: start_ms, end_ms."""
     cache_path = os.path.join(CACHE_DIR, f"{SYMBOL}_funding.json")
     if os.path.exists(cache_path):
         print("Wczytuję historyczny funding z pamięci lokalnej...")
@@ -181,6 +184,7 @@ def fetch_funding(start_ms, end_ms):
 
 
 def ema(values, period):
+    """Realizuje logike: ema. Parametry: values, period."""
     if not values:
         return []
     alpha = 2.0 / (period + 1.0)
@@ -193,6 +197,7 @@ def ema(values, period):
 
 
 def atr(high, low, close, period=ATR_N):
+    """Realizuje logike: atr. Parametry: high, low, close, period."""
     n = len(close)
     result = [0.0] * n
     if n <= period:
@@ -215,6 +220,7 @@ def atr(high, low, close, period=ATR_N):
 
 
 def adx(high, low, close, period=14):
+    """Realizuje logike: adx. Parametry: high, low, close, period."""
     n = len(close)
     result = [0.0] * n
     if n < 2 * period + 1:
@@ -261,6 +267,7 @@ def adx(high, low, close, period=14):
 
 
 def trend(close):
+    """Realizuje logike: trend. Parametry: close."""
     e20 = ema(close, 20)
     e50 = ema(close, 50)
     out = []
@@ -277,6 +284,7 @@ def trend(close):
 
 
 def load_data():
+    """Realizuje logike: load data."""
     d1 = fetch_history("1d", D1_CANDLES)
     h4 = fetch_history("4h", H4_CANDLES)
     h1 = fetch_history("1h", H1_CANDLES)
@@ -318,6 +326,7 @@ def load_data():
 
 
 def aligned(data, i, direction):
+    """Realizuje logike: aligned. Parametry: data, i, direction."""
     jd = data["daily_map"][i]
     j4 = data["h4_map"][i]
     if jd < 0 or j4 < 0:
@@ -330,6 +339,7 @@ def aligned(data, i, direction):
 
 
 def breakout(data, i, direction):
+    """Realizuje logike: breakout. Parametry: data, i, direction."""
     h1 = data["H1"]
     if i < LEVEL_CANDLES:
         return False
@@ -339,6 +349,7 @@ def breakout(data, i, direction):
 
 
 def filter_values(data, i, direction):
+    """Realizuje logike: filter values. Parametry: data, i, direction."""
     h1 = data["H1"]
     jd = data["daily_map"][i]
     a = data["A"]
@@ -365,6 +376,7 @@ def filter_values(data, i, direction):
 
 
 def simulate(data, i, direction):
+    """Realizuje logike: simulate. Parametry: data, i, direction."""
     h1 = data["H1"]
     entry_index = i + 1
     end_index = min(i + HORIZON, len(h1["c"]) - 1)

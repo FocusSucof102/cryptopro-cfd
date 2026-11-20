@@ -6,6 +6,13 @@
 > **INSTRUKCJA DLA AI (KONTEKST PROJEKTU):**
 > Gdy użytkownik podaje link do tego repozytorium w nowej rozmowie, przeczytaj w pierwszej kolejności ten plik (`README.md`) oraz pełną historię zmian w pliku [`CHANGELOG.md`](./CHANGELOG.md), a następnie przeanalizuj wskazane moduły `.py` bezpośrednio z gałęzi `main`.
 
+## 🛡️ OBOWIĄZKOWY STANDARD DLA AI PRZY DODAWANIU KAŻDEJ NOWEJ FUNKCJI (AUTO-NADZÓR)
+Każda nowa funkcja, pętla lub moduł `.py` dopisywany do projektu **MUSI** być automatycznie podpięty pod **wszystkie aktywne i przyszłe warstwy nadzoru**:
+1. **Dokumentacja (`Docstring`):** Obowiązkowy opis działania i parametrów wewnątrz każdej nowej funkcji.
+2. **QA 5.0+ & Auto-Repair:** Dodanie nowego modułu do `REQ_PY` w `smart_verify.py` (analiza AST `Scope-Guard`, `Call-Guard`, `SecOps`) oraz ewentualnych baz `.json` do `JSON_DEFAULTS` w `auto_repair_mod.py`.
+3. **Watchdog & Auto-Healing (`watchdog_mod.py`):** Dla każdej pętli w tle obowiązkowy wpis w `LIMITS_SEC`, sygnały `wd.beat(...)` oraz rejestracja w `wd.register_worker(...)` (restart po 3 brakach bez utraty danych).
+4. **Bezpieczne paczki & Ciągłość pamięci:** Skrypty instalacyjne zawsze dzielić na małe paczki (max 35–40 linii), a na końcu aktualizować `AI_SESSION_STATE.md` oraz `caly_projekt.txt`.
+
 ## 🗂️ Architektura Modułów w Repozytorium
 - `crypto_pro.py` — Główny rdzeń systemu: serwer Flask (`:5000`), obsługa bota Telegram (`tg_listener`, `tg_menu`), pętla `cfd_live_bg_loop` (co 15 min + Puls co 30 min), `fast_active_positions_loop` (co 60s) oraz `audit_cfd_history_1m`.
 - `alpha_pro_mod.py` — Dynamiczne pobieranie `TOP-60` kontraktów `BITGET USDT-FUTURES` (`>10M$`), walidacja odległości zleceń CFD (`validate_cfd_order`), pasek wielointerwałowy `MTF (X/4: 15M|1H|4H|1D)` oraz wskaźniki Alpha.

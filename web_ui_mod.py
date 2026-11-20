@@ -23,6 +23,8 @@ input{background:#0b0f17;color:#fff;border:1px solid #374151;border-radius:8px;p
 <input id="aud-sym" value="RAVE"> <button class="btn btn-g" onclick="runAudit()">🔍 Sprawdź Kod</button>
 <div id="aud-out" style="margin-top:8px;font-size:13px"></div></div>
 <div class="card" id="scan-card" style="display:none"><h2 id="scan-t">Wyniki</h2><div id="scan-out"></div></div>
+<div class="card"><h2>💓 Watchdog & Zdrowie Modułów 24/7</h2><div class="grid" id="wd-box"></div></div>
+<div class="card"><h2>🕒 Analityk Sesji Dobowych (Netto po prowizji -0.07R)</h2><div class="grid" id="sess-box"></div></div>
 <div class="card"><h2>🧪 3 Laboratoria + Live CFD (Netto po prowizji -0.07R)</h2><div class="grid" id="labs"></div></div>
 <div class="card"><h2>🌐 Wywiad Sieciowy</h2><div id="news" style="font-size:13px"></div></div>
 <script>
@@ -31,6 +33,8 @@ async function loadState(){
   document.getElementById('top-bar').innerHTML=`<span class="tag">${d.btc}</span> <span class="tag">Tuner: ${d.tuner.min_prob||58}%</span>`;
   let g=''; for(const[k,v] of Object.entries(d.labs)){const c=v.net_r>=0?'#34d399':'#f87171';g+=`<div class="stat"><b>${k}</b><br>${v.closed}/${v.total} | WR: <b>${v.wr}%</b><br>Netto: <b style="color:${c}">${v.net_r>=0?'+':''}${v.net_r}R</b></div>`;}
   document.getElementById('labs').innerHTML=g;
+  let w=''; for(const[k,v] of Object.entries(d.watchdog||{})){const ok=v.misses===0;w+=`<div class="stat"><b>${ok?'🟢':'🔴'} ${k}</b><br><small>${v.time_str||'-'}</small><br>${v.note||'OK'} (Restarty: ${v.restarts||0})</div>`;} document.getElementById('wd-box').innerHTML=w||'Oczekiwanie na cykl...';
+  let s=''; for(const[k,v] of Object.entries(d.sessions||{})){const c=v.net_r>=0?'#34d399':'#f87171';s+=`<div class="stat"><b>${k}</b><br>Próby: ${v.count} | WR: <b>${v.wr}%</b><br>Netto: <b style="color:${c}">${v.net_r>=0?'+':''}${v.net_r}R</b></div>`;} document.getElementById('sess-box').innerHTML=s;
   document.getElementById('news').innerHTML=(d.news||[]).map(x=>`<div style="margin-bottom:4px">${x}</div>`).join('')||'Brak alertów';
 }
 async function runAudit(){const s=document.getElementById('aud-sym').value;document.getElementById('aud-out').innerHTML='⏳ Skanuję...';const d=await(await fetch('/api/web_audit_contract?sym='+encodeURIComponent(s))).json();document.getElementById('aud-out').innerHTML=d.html;}
@@ -39,7 +43,9 @@ async function runPd(){const c=document.getElementById('scan-card');c.style.disp
 loadState();setInterval(loadState,30000);
 </script></body></html>"""
 
+import session_analytics_mod as sam
 def register_web_ui(app, cp_mod, apm, atm, cam, wpr):
+    """Realizuje logike: register web ui. Parametry: app, cp_mod, apm, atm, cam, wpr."""
     if "api_web_full_state" in app.view_functions: return
     @app.route("/api/web_full_state")
     def api_web_full_state():
@@ -53,7 +59,8 @@ def register_web_ui(app, cp_mod, apm, atm, cam, wpr):
             net_r = round(sum(float(x.get("res_r", 0)) - 0.07 for x in closed), 2)
             wr = round(sum(1 for x in closed if float(x.get("res_r", 0)) > 0) / max(1, len(closed)) * 100.0, 1)
             labs[k_l] = {"total": len(arr), "closed": len(closed), "wr": wr, "net_r": net_r}
-        return jsonify({"tuner": t_st, "btc": btc_lbl, "news": news, "labs": labs})
+        wd_data = json.load(open("module_heartbeats.json")) if os.path.exists("module_heartbeats.json") else {}
+        return jsonify({"tuner": t_st, "btc": btc_lbl, "news": news, "labs": labs, "watchdog": wd_data, "sessions": sam.compute_session_edge()})
 
     @app.route("/api/web_audit_contract")
     def api_web_audit_contract():

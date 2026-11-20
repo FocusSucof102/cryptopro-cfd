@@ -55,6 +55,7 @@ WATCH_EVERY = 300
 
 
 def get_json(url, **params):
+    """Realizuje logike: get json. Parametry: url."""
     last_error = None
     for attempt in range(3):
         try:
@@ -69,6 +70,7 @@ def get_json(url, **params):
 
 
 def fetch_klines(interval, limit):
+    """Realizuje logike: fetch klines. Parametry: interval, limit."""
     now_ms = int(time.time() * 1000)
     raw = get_json(
         BASE + "/fapi/v1/klines",
@@ -90,6 +92,7 @@ def fetch_klines(interval, limit):
 
 
 def ema(values, period):
+    """Realizuje logike: ema. Parametry: values, period."""
     if not values:
         return []
     alpha = 2.0 / (period + 1.0)
@@ -102,6 +105,7 @@ def ema(values, period):
 
 
 def atr(high, low, close, period=ATR_N):
+    """Realizuje logike: atr. Parametry: high, low, close, period."""
     n = len(close)
     result = [0.0] * n
     if n <= period:
@@ -124,6 +128,7 @@ def atr(high, low, close, period=ATR_N):
 
 
 def adx(high, low, close, period=14):
+    """Realizuje logike: adx. Parametry: high, low, close, period."""
     n = len(close)
     result = [0.0] * n
     if n < 2 * period + 1:
@@ -170,6 +175,7 @@ def adx(high, low, close, period=14):
 
 
 def trend(close):
+    """Realizuje logike: trend. Parametry: close."""
     e20 = ema(close, 20)
     e50 = ema(close, 50)
     result = []
@@ -186,6 +192,7 @@ def trend(close):
 
 
 def get_symbol_rules():
+    """Realizuje logike: get symbol rules."""
     info = get_json(BASE + "/fapi/v1/exchangeInfo")
     symbol_info = next(
         item for item in info["symbols"]
@@ -215,6 +222,7 @@ def get_symbol_rules():
 
 
 def round_qty_down(quantity, step):
+    """Realizuje logike: round qty down. Parametry: quantity, step."""
     q = Decimal(str(quantity))
     s = Decimal(str(step))
     if s <= 0:
@@ -223,6 +231,7 @@ def round_qty_down(quantity, step):
 
 
 def load_data():
+    """Realizuje logike: load data."""
     print("Pobieram zamkniete swiece Binance ...")
     d1 = fetch_klines("1d", 400)
     h4 = fetch_klines("4h", 300)
@@ -254,6 +263,7 @@ def load_data():
 
 
 def breakout(data, i, direction):
+    """Realizuje logike: breakout. Parametry: data, i, direction."""
     h1 = data["H1"]
     if i < LEVEL_CANDLES:
         return False
@@ -263,6 +273,7 @@ def breakout(data, i, direction):
 
 
 def evaluate_filters(data, i, direction):
+    """Realizuje logike: evaluate filters. Parametry: data, i, direction."""
     h1 = data["H1"]
     d1 = data["D1"]
     a = data["A"]
@@ -296,6 +307,7 @@ def evaluate_filters(data, i, direction):
 
 
 def analyze(data):
+    """Realizuje logike: analyze. Parametry: data."""
     h1 = data["H1"]
     d1 = data["D1"]
     h4 = data["H4"]
@@ -428,6 +440,7 @@ def analyze(data):
 
 
 def main():
+    """Realizuje logike: main."""
     import sys
 
     mode = sys.argv[1].lower() if len(sys.argv) > 1 else "live"

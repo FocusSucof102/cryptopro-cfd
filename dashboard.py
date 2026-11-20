@@ -28,9 +28,11 @@ LATEST_RESULTS = {"hits": [], "near": [], "time": "Oczekuje na skan..."}
 PROGRESS = {"running": False, "pct": 0, "eta": 0, "sym": "", "done": 0, "total": 30}
 
 def tg_url(token, method):
+    """Realizuje logike: tg url. Parametry: token, method."""
     return "https://" + "api.telegram.org" + "/bot" + token + "/" + method
 
 def make_chart_png(symbol):
+    """Realizuje logike: make chart png. Parametry: symbol."""
     h1 = sc.fetch_klines(symbol, "1h", 80)
     if not h1: return None
     closes = [round(x, 4) for x in h1["c"][-45:]]
@@ -41,6 +43,7 @@ def make_chart_png(symbol):
     return io.BytesIO(r.content) if r.status_code == 200 else None
 
 def run_web_scan(tg_chat=None, tg_tok=None, tg_msg_id=None):
+    """Realizuje logike: run web scan. Parametry: tg_chat, tg_tok, tg_msg_id."""
     if PROGRESS["running"]: return
     cfg_s = sc.load_settings()
     cap, rpct, top_n = cfg_s["capital"], cfg_s["risk_pct"], cfg_s["top_n"]
@@ -172,20 +175,24 @@ def old_scan(): return redirect(url_for("index"))
 
 @app.route("/")
 def index():
+    """Realizuje logike: index."""
     return render_template_string(HTML_TPL, res=LATEST_RESULTS, prog=PROGRESS, top_n=sc.load_settings()["top_n"])
 
 @app.route("/start_scan")
 def start_scan_bg():
+    """Realizuje logike: start scan bg."""
     if not PROGRESS["running"]:
         threading.Thread(target=run_web_scan, daemon=True).start()
     return jsonify({"ok": True})
 
 @app.route("/progress")
 def get_progress():
+    """Realizuje logike: get progress."""
     return jsonify(PROGRESS)
 
 @app.route("/demo")
 def do_demo():
+    """Realizuje logike: do demo."""
     LATEST_RESULTS["hits"] = [
         {"symbol": "SOLUSDT", "side": "LONG", "is_trig": True, "price": 142.85, "entry": 142.50, "stop": 138.20, "tp": [146.8, 151.1, 155.4, 159.7, 164.0], "req_cap": 65},
         {"symbol": "DOGEUSDT", "side": "LONG", "is_trig": False, "price": 0.1455, "entry": 0.1452, "stop": 0.1380, "tp": [0.1524, 0.1596, 0.1668, 0.1740, 0.1812], "req_cap": 18}
@@ -195,6 +202,7 @@ def do_demo():
     return redirect(url_for("index"))
 
 def send_tg_menu(cid, tok, text="<b>Panel Sterowania Skanerem</b>"):
+    """Realizuje logike: send tg menu. Parametry: cid, tok, text."""
     kb = {"inline_keyboard": [
         [{"text": "🔍 Skanuj Rynek Teraz", "callback_data": "scan_now"}],
         [{"text": "📈 Wykres BTCUSDT", "callback_data": "chart_BTCUSDT"}, {"text": "📈 Wykres SOLUSDT", "callback_data": "chart_SOLUSDT"}],
@@ -203,6 +211,7 @@ def send_tg_menu(cid, tok, text="<b>Panel Sterowania Skanerem</b>"):
     requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": text, "parse_mode": "HTML", "reply_markup": kb}, timeout=10)
 
 def telegram_bot_listener():
+    """Realizuje logike: telegram bot listener."""
     if not os.path.exists(sc.TG_CONFIG_FILE): return
     cfg = json.load(open(sc.TG_CONFIG_FILE))
     tok, cid = cfg.get("token","").strip(), cfg.get("chat_id","").strip()

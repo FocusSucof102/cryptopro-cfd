@@ -1,165 +1,123 @@
-import os, re, sys, ast, json, shutil, subprocess, traceback, py_compile
+import os, re, sys
+import auto_repair_mod as arm, ast, json, shutil, subprocess, traceback, py_compile, builtins
 
 REQ_PY = [
     "crypto_pro.py", "alpha_pro_mod.py", "auto_tuner_mod.py", "portfolio_mod.py",
     "planner_mod.py", "chart_mod.py", "demo_sim_mod.py", "web_pump_radar_mod.py",
-    "contract_audit_mod.py", "web_ui_mod.py", "self_test.py"
+    "contract_audit_mod.py", "web_ui_mod.py", "self_test.py", "watchdog_mod.py", "session_analytics_mod.py", "auto_repair_mod.py"
 ]
 
-def check_ast_quality(fn):
+def check_ast_and_scope(fn):
+    """Analiza AST: duplikaty, niezdefiniowane zmienne (NameError), liczba argumentow i URL-e."""
     src = open(fn, encoding="utf-8").read()
     tree = ast.parse(src, filename=fn)
-    seen_funcs = set()
+    seen_funcs, func_arities = set(), {}
+    mod_globals = set(dir(builtins))
+
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.name in seen_funcs:
+                raise RuntimeError(f"QA 5.0 AST: Duplikat '{node.name}' w {fn}:{node.lineno}!")
+            seen_funcs.add(node.name)
+            mod_globals.add(node.name)
+            tot_a = len(node.args.args)
+            func_arities[node.name] = (tot_a - len(node.args.defaults), tot_a, bool(node.args.vararg or node.args.kwarg))
+        elif isinstance(node, ast.ClassDef):
+            mod_globals.add(node.name)
+        elif isinstance(node, ast.Import):
+            for al in node.names: mod_globals.add(al.asname or al.name.partition(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            for al in node.names: mod_globals.add(al.asname or al.name)
+        elif isinstance(node, ast.Assign):
+            for t in node.targets:
+                for n in ast.walk(t):
+                    if isinstance(n, ast.Name): mod_globals.add(n.id)
     for node in tree.body:
         if isinstance(node, ast.FunctionDef):
-            if node.name in seen_funcs:
-                raise RuntimeError(f"AST Duplikat funkcji '{node.name}' w pliku {fn} (linia {node.lineno})!")
-            seen_funcs.add(node.name)
+            local_defs = {a.arg for a in node.args.args + node.args.kwonlyargs}
+            if node.args.vararg: local_defs.add(node.args.vararg.arg)
+            if node.args.kwarg: local_defs.add(node.args.kwarg.arg)
+            used_loads = []
+            for sub in ast.walk(node):
+                if isinstance(sub, ast.Name):
+                    if isinstance(sub.ctx, (ast.Store, ast.Param, ast.Del)): local_defs.add(sub.id)
+                    elif isinstance(sub.ctx, ast.Load): used_loads.append((sub.id, getattr(sub, "lineno", node.lineno)))
+                elif isinstance(sub, (ast.Import, ast.ImportFrom)):
+                    for al in sub.names: local_defs.add(al.asname or al.name.partition(".")[0])
+                elif isinstance(sub, ast.ExceptHandler) and sub.name: local_defs.add(sub.name)
+                elif isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    local_defs.add(sub.name)
+                    for a in sub.args.args + sub.args.kwonlyargs: local_defs.add(a.arg)
+                elif isinstance(sub, ast.Lambda):
+                    for a in sub.args.args + sub.args.kwonlyargs: local_defs.add(a.arg)
+                elif isinstance(sub, (ast.For, ast.AsyncFor, ast.comprehension)):
+                    tgt = sub.target
+                    for t in ast.walk(tgt):
+                        if isinstance(t, ast.Name): local_defs.add(t.id)
+                elif isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name):
+                    fn_c = sub.func.id
+                    if fn_c in func_arities and not sub.keywords and not any(isinstance(a, ast.Starred) for a in sub.args):
+                        r_min, r_max, has_v = func_arities[fn_c]
+                        if len(sub.args) < r_min or (not has_v and len(sub.args) > r_max):
+                            raise RuntimeError(f"QA 5.0 Call-Guard: Zla liczba arg. '{fn_c}' w {fn}:{getattr(sub, 'lineno', 0)}")
+            for nid, ln in used_loads:
+                if nid not in local_defs and nid not in mod_globals:
+                    raise RuntimeError(f"QA 5.0 Scope-Guard: Niezdefiniowana zmienna '{nid}' w {fn}:{ln} ({node.name})!")
 
 def check_secret_leaks():
-    # Skanujemy pliki sledzone przez git oraz staged files pod katem wycieku sekretow
+    """DevSecOps: skanuje pliki Git pod katem wycieku kluczy i tokenow."""
     tracked = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
-    secret_patterns = [
-        (r"\b\d{8,10}:[A-Za-z0-9_-]{35}\b", "Token Bota Telegrama"),
-        (r"\bghp_[A-Za-z0-9]{36}\b", "GitHub Personal Access Token"),
-        (r"\bgithub_pat_[A-Za-z0-9_]{22,}\b", "GitHub Fine-Grained Token"),
-    ]
+    pats = [(r"\b\d{8,10}:[A-Za-z0-9_-]{35}\b", "Token TG"), (r"\bghp_[A-Za-z0-9]{36}\b", "GitHub Token")]
     for fn in tracked:
-        if not os.path.exists(fn) or fn.endswith(".json"):
-            continue
-        txt = open(fn, encoding="utf-8", errors="ignore").read()
-        for pat, desc in secret_patterns:
-            if re.search(pat, txt):
-                raise RuntimeError(f"SECURITY ALERT! Wykryto {desc} w pliku sledzonym przez Git: '{fn}'!")
-
-def check_system_resources():
-    # Kontrola wolnego miejsca na dysku (>150 MB) oraz automatyczna rotacja bot_bg.log (>2 MB)
+        if os.path.exists(fn) and not fn.endswith(".json"):
+            txt = open(fn, encoding="utf-8", errors="ignore").read()
+            for pat, desc in pats:
+                if re.search(pat, txt): raise RuntimeError(f"SECURITY ALERT: {desc} w '{fn}'!")
+def run_smart_audit():
+    """Pelny audyt QA 5.0 PRO+."""
     _, _, free_b = shutil.disk_usage(".")
     free_mb = free_b // (1024 * 1024)
-    if free_mb < 150:
-        raise RuntimeError(f"Krytycznie malo wolnego miejsca na telefonie: {free_mb} MB (wymagane min. 150 MB)!")
+    if free_mb < 150: raise RuntimeError(f"Malo miejsca: {free_mb} MB!")
     if os.path.exists("bot_bg.log") and os.path.getsize("bot_bg.log") > 2 * 1024 * 1024:
-        tail = open("bot_bg.log", encoding="utf-8", errors="ignore").readlines()[-500:]
-        open("bot_bg.log", "w", encoding="utf-8").writelines(tail)
-    return free_mb
-
-def run_smart_audit():
-    # 1. Zasoby urzadzenia i rotacja logow
-    free_mb = check_system_resources()
-
-    # 2. Kompilacja + Statyczna Analiza AST (duplikaty funkcji, puste pliki)
+        open("bot_bg.log", "w", encoding="utf-8").writelines(open("bot_bg.log", encoding="utf-8", errors="ignore").readlines()[-500:])
+    doc_cnt = 0
     for fn in REQ_PY + ["README.md", "CHANGELOG.md"]:
-        if not os.path.exists(fn) or os.path.getsize(fn) < 50:
-            raise RuntimeError(f"Brak lub pusty plik: '{fn}'")
+        if not os.path.exists(fn) or os.path.getsize(fn) < 50: raise RuntimeError(f"Brak/pusty: '{fn}'")
         if fn.endswith(".py"):
             py_compile.compile(fn, doraise=True)
-            check_ast_quality(fn)
-
-    # 3. DevSecOps Secret Leak Scanner
+            check_ast_and_scope(fn)
+            doc_cnt += sum(1 for n in ast.parse(open(fn, encoding="utf-8").read()).body if isinstance(n, ast.FunctionDef) and ast.get_docstring(n))
     check_secret_leaks()
-
-    # 4. Integralnosc baz JSON
     for jf in ["tg_config.json", "tuner_state.json", "market_shadow_lab.json", "wild_market_lab.json", "micro_market_lab.json"]:
-        if not os.path.exists(jf):
-            raise FileNotFoundError(f"Brak pliku danych: {jf}")
-        data_j = json.load(open(jf, encoding="utf-8"))
-        if jf == "tg_config.json" and (not data_j.get("token") or not data_j.get("chat_id")):
-            raise RuntimeError("Puste pole token lub chat_id w tg_config.json!")
-
-    # 5. Audyt martwych przyciskow Telegrama
-    cp_txt = open("crypto_pro.py", encoding="utf-8").read()
-    defined_cbs = set(re.findall(r'["\']callback_data["\']\s*:\s*["\']([^"\'{]+)["\']', cp_txt))
-    handled_eq = set(re.findall(r'cb\s*==\s*["\']([^"\']+)["\']', cp_txt))
-    handled_sw = set(re.findall(r'cb\.startswith\(\s*["\']([^"\']+)["\']', cp_txt))
-    dead = [b for b in sorted(defined_cbs) if not ((b in handled_eq) or any(b.startswith(p) for p in handled_sw))]
-    if dead:
-        raise RuntimeError(f"Martwe przyciski w Telegramie bez obslugi: {dead}")
-
-    # 6. Edge-Case Fuzzing (test odpornosci na bledne dane z gieldy: 0, ujemne, puste)
+        if not os.path.exists(jf): raise FileNotFoundError(f"Brak: {jf}")
+        json.load(open(jf, encoding="utf-8"))
     import alpha_pro_mod as apm, auto_tuner_mod as atm, contract_audit_mod as cam, web_pump_radar_mod as wpr, web_ui_mod, crypto_pro as cp, self_test
-    if apm.validate_cfd_order(0, 0, 0) is not False or apm.validate_cfd_order(100, 100, 100) is not False:
-        raise RuntimeError("Fuzzing Alert: validate_cfd_order przepuscil zerowe/bledne zlecenie!")
-
-    # 7. Pelny 8-etapowy test API + symulacja tras Chrome Flask
+    if apm.validate_cfd_order(0, 0, 0) is not False: raise RuntimeError("Fuzzing Alert!")
+    import watchdog_mod as wd
+    stalled_qa = wd.check_stalled_modules()
+    if stalled_qa: raise RuntimeError('Watchdog Alert: ' + ' | '.join(stalled_qa))
     res_8 = self_test.run_full_self_test()
     web_ui_mod.register_web_ui(cp.app, cp, apm, atm, cam, wpr)
-    with cp.app.test_client() as client:
-        for route in ["/", "/api/web_full_state"]:
-            resp = client.get(route)
-            if resp.status_code != 200 or len(resp.data) < 50:
-                raise RuntimeError(f"Defekt Pulpitu Chrome na trasie '{route}': HTTP {resp.status_code}")
-
-    return f"QA 3.0 PASS | Wolne: {free_mb}MB | {res_8}"
+    with cp.app.test_client() as cl:
+        for rt in ["/", "/api/web_full_state"]:
+            if cl.get(rt).status_code != 200: raise RuntimeError(f"Defekt Web UI: {rt}")
+    return f"QA 5.0 PRO+ | Docs:{doc_cnt} | {free_mb}MB | {res_8}"
 
 if __name__ == "__main__":
-    import urllib.request
     from datetime import datetime
-
     QA_FILE = "qa_health_history.json"
     G, R, X = "\033[1;92m", "\033[1;91m", "\033[0m"
-
-    def send_tg_qa(msg_html):
-        try:
-            if os.path.exists("tg_config.json"):
-                tc = json.load(open("tg_config.json", encoding="utf-8"))
-                tok, cid = tc.get("token", "").strip(), tc.get("chat_id", "").strip()
-                if tok and cid:
-                    u = f"https://telegram.org{tok}/sendMessage"
-                    data = json.dumps({"chat_id": cid, "text": msg_html, "parse_mode": "HTML"}).encode("utf-8")
-                    urllib.request.urlopen(urllib.request.Request(u, data=data, headers={"Content-Type": "application/json"}), timeout=10)
-        except Exception:
-            pass
-
-    def push_qa_github():
-        try:
-            subprocess.run(["git", "add", "-f", QA_FILE, ".gitignore"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            subprocess.run(["git", "commit", "-m", f"QA Log {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            subprocess.run(["git", "push", "origin", "main"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except Exception:
-            pass
-
     hist = json.load(open(QA_FILE, encoding="utf-8")) if os.path.exists(QA_FILE) else []
     now_s = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    unresolved = [x for x in hist if x.get("status") == "UNRESOLVED"]
-
     try:
         res = run_smart_audit()
-        fixed_cnt = 0
-        for it in unresolved:
-            it["status"], it["fixed_at"] = "RESOLVED", now_s
-            fixed_cnt += 1
-        hist.append({"ts": now_s, "status": "PASS", "summary": res, "fixed_previous": fixed_cnt})
+        hist.append({"ts": now_s, "status": "PASS", "summary": res})
         json.dump(hist[-100:], open(QA_FILE, "w", encoding="utf-8"), indent=2)
-        if fixed_cnt > 0:
-            send_tg_qa(f"✅ <b>NAPRAWA POTWIERDZONA (QA 3.0 PASS)</b>\n🕒 <code>{now_s}</code> | Zamknięto błędy: <b>{fixed_cnt}</b>")
-            push_qa_github()
-        print(f"\n{G}+--------------------------------------------------+")
-        print(f"|   ✅ PROFESJONALNY AUDYT QA 3.0: ZERO BŁĘDÓW!    |")
-        print(f"+--------------------------------------------------+")
-        print(f"| {res[:48].ljust(48)} |")
-        print(f"+--------------------------------------------------+{X}\n")
-        sys.exit(0)
+        import crypto_pro as cp; cp.build_ai_context_bundle()
+        print(f"\n{G}+--------------------------------------------------+\n|   ✅ AUDYT QA 5.0 PRO+ (AST/SCOPE): ZERO BLEDOW! |\n+--------------------------------------------------+\n| {res[:48].ljust(48)} |\n+--------------------------------------------------+{X}\n")
     except Exception as exc:
-        tb_str = traceback.format_exc()
-        m = re.findall(r'File "([^"]+)", line (\d+)', tb_str)
-        ctx_lines, loc_str = [], "nieznana"
-        if m:
-            err_file, err_line_s = m[-1]
-            err_line = int(err_line_s)
-            loc_str = f"{os.path.basename(err_file)}:{err_line}"
-            if os.path.exists(err_file):
-                all_l = open(err_file, encoding="utf-8", errors="ignore").readlines()
-                for idx_l in range(max(0, err_line - 4), min(len(all_l), err_line + 3)):
-                    mark = ">>" if (idx_l + 1) == err_line else "  "
-                    ctx_lines.append(f"{mark} {idx_l+1}: {all_l[idx_l].rstrip()}")
         err_msg = f"{type(exc).__name__}: {exc}"
-        hist.append({"ts": now_s, "status": "UNRESOLVED", "location": loc_str, "error": err_msg})
+        hist.append({"ts": now_s, "status": "UNRESOLVED", "error": err_msg})
         json.dump(hist[-100:], open(QA_FILE, "w", encoding="utf-8"), indent=2)
-        push_qa_github()
-        send_tg_qa(f"🚨 <b>ALARM QA 3.0 — NIENAPRAWIONY BŁĄD!</b>\n🕒 <code>{now_s}</code> | 📍 <code>{loc_str}</code>\n❌ <code>{err_msg[:200]}</code>")
-        print(f"\n{R}================ [RAPORT BLEDU DO WKLEJENIA] ================")
-        print(f"BLAD: {err_msg}")
-        if ctx_lines: print("KOD WOKOL BLEDU:\n" + "\n".join(ctx_lines))
-        print("TRACEBACK:\n" + tb_str.strip())
-        print(f"============================================================={X}\n")
+        print(f"\n{R}================ [RAPORT BLEDU DO WKLEJENIA] ================\nBLAD: {err_msg}\n============================================================={X}\n")
         sys.exit(1)

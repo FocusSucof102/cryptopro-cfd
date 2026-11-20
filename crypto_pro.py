@@ -18,6 +18,8 @@
 #    ani twardej blokady tylko jednego kierunku handlu.
 # ==============================================================================
 import auto_tuner_mod as atm
+import watchdog_mod as wd
+import session_analytics_mod as sam
 from concurrent.futures import ThreadPoolExecutor, as_completed
 CFD_SNOOZE_UNTIL = 0
 CFD_LIVE_ACTIVE = True
@@ -54,27 +56,32 @@ PROG = {"running": False, "pct": 0, "eta": 0, "sym": "", "done": 0, "total": 30}
 last_term_view = None
 
 def load_settings():
+    """Realizuje logike: load settings."""
     d = {"capital": 200.0, "risk_pct": 1.0, "top_n": 30, "exchange": "BINANCE", "liq_only": True}
     if os.path.exists(SETTINGS_FILE):
         with open(SETTINGS_FILE, "r") as f: d.update(json.load(f))
     return d
 
 def save_settings(cfg):
+    """Realizuje logike: save settings. Parametry: cfg."""
     with open(SETTINGS_FILE, "w") as f: json.dump(cfg, f)
 
 def fmt_p(v):
+    """Realizuje logike: fmt p. Parametry: v."""
     if v >= 10000: return f"{v:8.1f}"
     if v >= 1000:  return f"{v:8.2f}"
     if v >= 10:    return f"{v:8.3f}"
     return f"{v:8.4f}"
 
 def round_qty_down(qty, step):
+    """Realizuje logike: round qty down. Parametry: qty, step."""
     q, s = Decimal(str(qty)), Decimal(str(step))
     return float((q / s).to_integral_value(rounding=ROUND_DOWN) * s) if s > 0 else 0.0
 
 def tg_url(tok, m): return "https://" + chr(97) + "pi.telegram.org" + "/bot" + tok + "/" + m
 
 def send_telegram(msg, kb=None):
+    """Realizuje logike: send telegram. Parametry: msg, kb."""
     if not os.path.exists(TG_CONFIG_FILE): return
     cfg = json.load(open(TG_CONFIG_FILE))
     tok, cid = cfg.get("token","").strip(), cfg.get("chat_id","").strip()
@@ -85,6 +92,7 @@ def send_telegram(msg, kb=None):
     except Exception: pass
 
 def log_to_csv(row):
+    """Realizuje logike: log to csv. Parametry: row."""
     ex = os.path.exists(CSV_FILE)
     fields = ["timestamp","exchange","symbol","side","price","entry","stop_loss","tp_1R","tp_2R","tp_3R","tp_4R","tp_5R","qty","notional_usdt","leverage","req_cap","eta_str"]
     with open(CSV_FILE, "a", newline="", encoding="utf-8") as f:
@@ -96,6 +104,7 @@ HTTP_SESS = requests.Session()
 HTTP_SESS.headers.update({"User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36"})
 
 def get_json(url, **params):
+    """Realizuje logike: get json. Parametry: url."""
     for att in range(2):
         try:
             r = HTTP_SESS.get(url, params=params, timeout=4)
@@ -110,10 +119,12 @@ def get_json(url, **params):
     return None
 
 def u_join(*parts):
+    """Realizuje logike: u join."""
     clean = [p.replace("://", chr(97) + "pi.") for p in parts]
     return chr(47).join(clean)
 
 def get_market_meta(exchange, top_n):
+    """Realizuje logike: get market meta. Parametry: exchange, top_n."""
     min_vol = 5000000.0 if load_settings().get("liq_only", True) else 250000.0
     rules, prices = {}, {}
     if exchange == "BYBIT":
@@ -171,6 +182,7 @@ def get_market_meta(exchange, top_n):
         raise RuntimeError("Brak polaczenia z API.")
 
 def _parse_rows(rows, idx_o, idx_h, idx_l, idx_c, idx_v):
+    """Realizuje logike: parse rows. Parametry: rows, idx_o, idx_h, idx_l, idx_c, idx_v."""
     return {
         "o": [float(r.__getitem__(idx_o)) for r in rows],
         "h": [float(r.__getitem__(idx_h)) for r in rows],
@@ -180,6 +192,7 @@ def _parse_rows(rows, idx_o, idx_h, idx_l, idx_c, idx_v):
     }
 
 def fetch_klines(exchange, sym, interval, limit):
+    """Realizuje logike: fetch klines. Parametry: exchange, sym, interval, limit."""
     now_ms = int(time.time() * 1000)
     if exchange == "BYBIT":
         imap = {"1d": "D", "4h": "240", "1h": "60", "15m": "15"}
@@ -205,11 +218,13 @@ def fetch_klines(exchange, sym, interval, limit):
         return _parse_rows(raw, 1, 2, 3, 4, 5)
 
 def ema(v, p):
+    """Realizuje logike: ema. Parametry: v, p."""
     a = 2.0 / (p + 1.0); res, cur = [], v.__getitem__(0)
     for x in v: cur = x * a + cur * (1.0 - a); res.append(cur)
     return res
 
 def atr(h, l, c, p=ATR_N):
+    """Realizuje logike: atr. Parametry: h, l, c, p."""
     n = len(c); res = [0.0]*n
     tr = [h[0]-l[0]] + [max(h[i]-l[i], abs(h[i]-c[i-1]), abs(l[i]-c[i-1])) for i in range(1, n)]
     cur = sum(tr[1:p+1])/p; res[p] = cur
@@ -217,6 +232,7 @@ def atr(h, l, c, p=ATR_N):
     return res
 
 def adx(h, l, c, p=14):
+    """Realizuje logike: adx. Parametry: h, l, c, p."""
     n = len(c); res = [0.0]*n; tr, pdm, mdm = [0.0]*n, [0.0]*n, [0.0]*n
     for i in range(1, n):
         up, dn = h[i]-h[i-1], l[i-1]-l[i]
@@ -232,10 +248,12 @@ def adx(h, l, c, p=14):
     return res
 
 def get_trend(c):
+    """Realizuje logike: get trend. Parametry: c."""
     e20, e50 = ema(c, 20), ema(c, 50)
     return 1 if c[-1] > e20[-1] > e50[-1] else (-1 if c[-1] < e20[-1] < e50[-1] else 0)
 
 def analyze_trajectory(c, level, td, atr_val):
+    """Realizuje logike: analyze trajectory. Parametry: c, level, td, atr_val."""
     dist = max(0.0, (level - c[-1]) if td == 1 else (c[-1] - level))
     if dist == 0: return "TERAZ", "Wybija poziom"
     # Analiza przebiegu ostatnich 6h (dynamika + zmiennosc ATR)
@@ -247,6 +265,7 @@ def analyze_trajectory(c, level, td, atr_val):
     return eta, momentum
 
 def make_chart_png(exchange, symbol, entry=None, stop=None, tp_list=None):
+    """Realizuje logike: make chart png. Parametry: exchange, symbol, entry, stop, tp_list."""
     h1 = fetch_klines(exchange, symbol, "1h", 80)
     if not h1: return None
     closes = [round(x, 4) for x in h1["c"][-45:]]
@@ -262,6 +281,7 @@ def make_chart_png(exchange, symbol, entry=None, stop=None, tp_list=None):
     return io.BytesIO(r.content) if r.status_code == 200 else None
 
 def get_exchange_url(ex, sym):
+    """Realizuje logike: get exchange url. Parametry: ex, sym."""
     base = sym.replace("USDT", "")
     sl = chr(47)
     if ex == "BINANCE": return "https:" + sl*2 + "://binance.com" + sl + "en" + sl + "futures" + sl + sym
@@ -271,6 +291,7 @@ def get_exchange_url(ex, sym):
     else: return "https:" + sl*2 + "www.bitbase.com"
 
 def format_tg_card(h, ex, tag=""):
+    """Realizuje logike: format tg card. Parametry: h, ex, tag."""
     tp1, tp2, tp3, tp4, tp5 = h["tp"]
     ico = "🟢" if h["side"] == "LONG" else "🔴"
     st = "TRIGGER" if h["is_trig"] else ("DALEKO" if not h["price_ok"] else "GOTOWY")
@@ -289,6 +310,7 @@ def format_tg_card(h, ex, tag=""):
     )
 
 def _scan_one_coin(args):
+    """Realizuje logike: scan one coin. Parametry: args."""
     ex, sym, price, rules, enabled, cap, rpct = args
     d1 = fetch_klines(ex, sym, "1d", 220)
     if not d1 or get_trend(d1["c"]) == 0: return None
@@ -318,7 +340,9 @@ def _scan_one_coin(args):
     elif not beyond_now and dist_atr <= NEAR_ATR and not missing: is_trig = False
     else:
         if not beyond_now and dist_atr <= 1.5:
-            ok_a, bonus_a, alpha_tag = apm.evaluate_alpha(sys.modules[__name__], sym, side, h1)
+            side_n = "LONG" if td == 1 else "SHORT"
+            ok_a, bonus_a, alpha_tag = apm.evaluate_alpha(sys.modules[__name__], sym, side_n, h1)
+            win_prob = 55
             if not ok_a: return None
             win_prob = min(96, max(45, win_prob + bonus_a))
             return ("near", {"symbol": sym, "side": "LONG" if td == 1 else "SHORT", "price": price, "dist_atr": round(dist_atr, 2), "dist_pct": round(dist_pct, 2), "eta_str": eta_str, "mom": mom, "missing": ",".join(missing) or "Blisko wybicia"})
@@ -358,6 +382,7 @@ def _scan_one_coin(args):
 EX_COUNTS = {}
 
 def get_dynamic_top_tiers(ex):
+    """Realizuje logike: get dynamic top tiers. Parametry: ex."""
     liq = load_settings().get("liq_only", True)
     ckey = f"{ex}_{liq}"
     try:
@@ -373,6 +398,7 @@ def get_dynamic_top_tiers(ex):
 BTC_LIVE_REGIME = {"ts": 0, "dir": 0, "label": "NEUTRALNY"}
 
 def get_live_btc_regime():
+    """Realizuje logike: get live btc regime."""
     if time.time() - BTC_LIVE_REGIME["ts"] < 180 and BTC_LIVE_REGIME["dir"] != 0:
         return BTC_LIVE_REGIME["dir"], BTC_LIVE_REGIME["label"]
     kl = fetch_klines("BYBIT", "BTCUSDT", "1h", 220) or fetch_klines("BITGET", "BTCUSDT", "1h", 220)
@@ -387,6 +413,7 @@ def get_live_btc_regime():
     return 0, "⚪ BRAK DANYCH BTC"
 
 def run_full_scan(show_term=False, tg_mid=None):
+    """Realizuje logike: run full scan. Parametry: show_term, tg_mid."""
     if PROG["running"]:
         if show_term: print(f"{Y}Skanowanie juz trwa w tle ({PROG['pct']}%)...{W}")
         return
@@ -470,12 +497,14 @@ def r_tgl(k): cm.toggle_chart_opt(k); return redirect(url_for("index"))
 
 @app.route("/img/<sym>")
 def r_img(sym):
+    """Realizuje logike: r img. Parametry: sym."""
     from flask import send_file
     buf, _ = cm.build_chart_buf(load_settings()["exchange"], sym)
     return send_file(buf, mimetype="image/png") if buf else ("Blad", 404)
 
 @app.route("/analyze/<sym>")
 def r_an(sym):
+    """Realizuje logike: r an. Parametry: sym."""
     ex = load_settings()["exchange"]
     _, ta = cm.build_chart_buf(ex, sym)
     if not ta: return "Brak danych"
@@ -490,17 +519,20 @@ def r_open_ex(sym): return redirect(get_exchange_url(load_settings()["exchange"]
 
 @app.route("/top/<int:n>")
 def r_top(n):
+    """Realizuje logike: r top. Parametry: n."""
     c = load_settings(); c["top_n"] = n; save_settings(c)
     return redirect(url_for("index"))
 
 @app.route("/live_tgl")
 def r_live_tgl():
+    """Realizuje logike: r live tgl."""
     global LIVE_ACTIVE
     LIVE_ACTIVE = not LIVE_ACTIVE
     return redirect(url_for("index"))
 
 @app.route("/go_analyze")
 def r_go_analyze():
+    """Realizuje logike: r go analyze."""
     from flask import request
     sym = request.args.get("sym", "BTCUSDT").strip().upper()
     if not sym.endswith("USDT"): sym += "USDT"
@@ -508,6 +540,7 @@ def r_go_analyze():
 
 @app.route("/planner")
 def r_planner():
+    """Realizuje logike: r planner."""
     from flask import request
     cfg = load_settings()
     ex = cfg["exchange"]
@@ -570,11 +603,13 @@ def r_planner():
 
 @app.route("/clip/<val>")
 def r_clip(val):
+    """Realizuje logike: r clip. Parametry: val."""
     os.system(f'termux-clipboard-set "{val}" >/dev/null 2>&1')
     return ("ok", 200)
 
 @app.route("/portfolio")
 def r_portfolio():
+    """Realizuje logike: r portfolio."""
     summary = pf.get_portfolio_summary()
     rows_html = ""
     for p in summary["positions"]:
@@ -613,6 +648,7 @@ def r_portfolio():
 
 @app.route("/add_pos")
 def r_add_pos():
+    """Realizuje logike: r add pos."""
     from flask import request
     sym = request.args.get("sym", "").strip().upper()
     cfg = load_settings(); ex = cfg["exchange"]
@@ -624,16 +660,19 @@ def r_add_pos():
 
 @app.route("/hit_tp/<pid>/<int:idx>")
 def r_hit_tp(pid, idx):
+    """Realizuje logike: r hit tp. Parametry: pid, idx."""
     pf.toggle_tp_hit(pid, idx)
     return redirect(url_for("r_portfolio"))
 
 @app.route("/del_pos/<pid>")
 def r_del_pos(pid):
+    """Realizuje logike: r del pos. Parametry: pid."""
     pf.close_position(pid)
     return redirect(url_for("r_portfolio"))
 
 @app.route("/set_cap")
 def r_set_cap():
+    """Realizuje logike: r set cap."""
     from flask import request
     v = request.args.get("cap", "").strip()
     if v:
@@ -642,6 +681,7 @@ def r_set_cap():
 
 @app.route("/liq/<int:val>")
 def r_liq(val):
+    """Realizuje logike: r liq. Parametry: val."""
     c = load_settings(); c["liq_only"] = bool(val)
     tiers, mx = get_dynamic_top_tiers(c["exchange"])
     c["top_n"] = mx; save_settings(c)
@@ -649,6 +689,7 @@ def r_liq(val):
 
 @app.route("/demo24")
 def r_demo24():
+    """Realizuje logike: r demo24."""
     from flask import request
     if request.args.get("new") == "1":
         ds24.start_demo_24h(); return redirect(url_for("r_demo24"))
@@ -660,6 +701,7 @@ def r_demo24():
 
 @app.route("/backtest")
 def r_backtest():
+    """Realizuje logike: r backtest."""
     from flask import request
     sym = request.args.get("sym", "M10").strip().upper()
     t20 = ["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","ADAUSDT","DOGEUSDT","AVAXUSDT","LINKUSDT","DOTUSDT","TRXUSDT","MATICUSDT","LTCUSDT","BCHUSDT","ATOMUSDT","UNIUSDT","NEARUSDT","APTUSDT","FILUSDT","INJUSDT"]
@@ -678,6 +720,7 @@ def r_scan(): return redirect(url_for("index"))
 
 @app.route("/start")
 def r_start():
+    """Realizuje logike: r start."""
     if not PROG["running"]: threading.Thread(target=run_full_scan, daemon=True).start()
     return jsonify({"ok": True})
 
@@ -686,10 +729,12 @@ def r_prog(): return jsonify(PROG)
 
 @app.route("/ex/<name>")
 def r_ex(name):
+    """Realizuje logike: r ex. Parametry: name."""
     c = load_settings(); c["exchange"] = name.upper(); save_settings(c)
     return redirect(url_for("index"))
 
 def fill_demo():
+    """Realizuje logike: fill demo."""
     LATEST["hits"] = [
         {"symbol": "SOLUSDT", "side": "LONG", "is_trig": True, "price_ok": True, "price": 142.85, "entry": 142.50, "stop": 138.20, "tp": [146.8, 151.1, 155.4, 159.7, 164.0], "req_cap": 65, "dist_pct": 0.24, "dist_atr": 0.15, "eta_str": "TERAZ", "mom": "Wybija poziom", "gap_pct": 0.0, "max_dev": 5.0},
         {"symbol": "XRPUSDT", "side": "SHORT", "is_trig": False, "price_ok": False, "price": 0.5510, "entry": 0.5120, "stop": 0.5310, "tp": [0.493, 0.474, 0.455, 0.436, 0.417], "req_cap": 82, "dist_pct": 7.08, "dist_atr": 0.92, "eta_str": "~3.5h", "mom": "Przyspiesza", "gap_pct": 4.08, "max_dev": 3.0}
@@ -699,13 +744,18 @@ def fill_demo():
 
 @app.route("/demo")
 def r_demo():
+    """Realizuje logike: r demo."""
     fill_demo()
     return redirect(url_for("index"))
 
 
 CFD_HIST_FILE = "cfd_live_history.json"
+SHADOW_LAB_FILE = "market_shadow_lab.json"
+WILD_LAB_FILE = "wild_market_lab.json"
+MICRO_LAB_FILE = "micro_market_lab.json"
 
 def log_cfd_hits_to_file(hits_list, src="LIVE"):
+    """Realizuje logike: log cfd hits to file. Parametry: hits_list, src."""
     if not hits_list: return
     try:
         cur_h = json.load(open(CFD_HIST_FILE)) if os.path.exists(CFD_HIST_FILE) else []
@@ -743,14 +793,17 @@ def log_cfd_hits_to_file(hits_list, src="LIVE"):
         pass
 
 def fmt_dur_mins(mins):
+    """Realizuje logike: fmt dur mins. Parametry: mins."""
     mins = max(1, int(mins))
     if mins < 60: return f"{mins}m"
     h, m = divmod(mins, 60)
     return f"{h}h{m:02d}m" if h < 24 else f"{h//24}d{h%24}h"
 
-def audit_cfd_history_1m():
-    if not os.path.exists(CFD_HIST_FILE): return []
-    rows = json.load(open(CFD_HIST_FILE))
+def audit_cfd_history_1m(hist_path=None):
+    """Odtwarza historie sygnalow na swiecach 1m/5m (MFE/MAE). Parametry: hist_path."""
+    target_f = hist_path or CFD_HIST_FILE
+    if not os.path.exists(target_f): return []
+    rows = json.load(open(target_f))
     changed = False
     now_ep = int(time.time())
     for r in rows:
@@ -825,10 +878,11 @@ def audit_cfd_history_1m():
             r["status"], r["res_r"], r["dur_str"] = f"⏳ {live_r:+.1f}R", live_r, fmt_dur_mins((now_ep - t0) // 60)
         changed = True
     if changed:
-        json.dump(rows, open(CFD_HIST_FILE, "w"), indent=2)
+        json.dump(rows, open(target_f, "w"), indent=2)
     return rows
 
 def render_cfd_history_table():
+    """Realizuje logike: render cfd history table."""
     rows = audit_cfd_history_1m()
     if not rows:
         lab_stats = []
@@ -889,6 +943,7 @@ def render_cfd_history_table():
     return f"📊 <b>AUDYT I TELEMETRIA LIVE CFD (KNOTY 1M)</b>\n<pre>" + "\n".join(lines) + "</pre>" + diag + "\n".join(b_lines)
 
 def tg_menu(cid=None, tok=None, notice=""):
+    """Realizuje logike: tg menu. Parametry: cid, tok, notice."""
     if (not cid or not tok) and os.path.exists(TG_CONFIG_FILE):
         tc = json.load(open(TG_CONFIG_FILE))
         cid = cid or tc.get("chat_id", "").strip()
@@ -912,6 +967,7 @@ def tg_menu(cid=None, tok=None, notice=""):
     requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": txt_safe, "parse_mode": "HTML", "reply_markup": kb}, timeout=15)
 
 def tg_listener():
+    """Realizuje logike: tg listener."""
     if not os.path.exists(TG_CONFIG_FILE): return
     cfg = json.load(open(TG_CONFIG_FILE))
     tok, cid = cfg.get("token","").strip(), cfg.get("chat_id","").strip()
@@ -1145,7 +1201,7 @@ def tg_listener():
                                         if sl_m_dyn != 1.0:
                                             td_w = 1 if h["side"] == "LONG" else -1
                                             h["stop"] = round(h["entry"] - td_w * abs(h["entry"] - h["stop"]) * sl_m_dyn, 6)
-                                        if apm.validate_cfd_order(h["entry"], h["stop"], h["price"]) and h.get("win_prob", 0) >= min_p_dyn:
+                                        if h["symbol"] not in sam.get_bitbase_blacklist() and apm.validate_cfd_order(h["entry"], h["stop"], h["price"]) and h.get("win_prob", 0) >= min_p_dyn:
                                             return h
                                     return None
                                 done_c = 0
@@ -1193,7 +1249,7 @@ def tg_listener():
                                             f"{apm.get_mtf_status_line('BITGET', h['symbol'], h['side'])}\n"
                                             f"{pf.check_new_opportunity_margin(h['side'])}"
                                         )
-                                        kb_m = {"inline_keyboard": [[{"text": f"🧮 Plan ({h['symbol']})", "callback_data": f"plan_{h['symbol']}"}, {"text": "➕ Obstawiam", "callback_data": f"addp_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}, {"text": "🛡️ Audyt", "callback_data": f"aud_{h['symbol']}"}]]}
+                                        kb_m = {"inline_keyboard": [[{"text": f"🧮 Plan ({h['symbol']})", "callback_data": f"plan_{h['symbol']}"}, {"text": "➕ Obstawiam", "callback_data": f"addp_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}, {"text": "🛡️ Audyt", "callback_data": f"aud_{h['symbol']}"}, {"text": "🚫 Brak BitBase", "callback_data": f"bbl_{h['symbol']}"}]]}
                                         requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": card_m, "parse_mode": "HTML", "reply_markup": kb_m}, timeout=15)
                             except Exception as err:
                                 requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": f"⚠️ Blad skanu CFD: <code>{err}</code>", "parse_mode": "HTML"}, timeout=15)
@@ -1206,7 +1262,7 @@ def tg_listener():
                             hits_sorted = sorted(LATEST["hits"], key=lambda x: (-x.get("win_prob", 0), x["req_cap"]))
                             requests.post(tg_url(tok, "editMessageText"), json={"chat_id": cid, "message_id": mid, "text": f"✅ <b>Gotowe ({ex})!</b> Znaleziono: <b>{len(hits_sorted)}</b> (od najpewniejszej od gory) | W poblizu: <b>{len(LATEST['near'])}</b>", "parse_mode": "HTML"})
                             for idx, h in enumerate(hits_sorted, 1):
-                                kb_h = {"inline_keyboard": [[{"text": "➕ Obstawiam", "callback_data": f"addp_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}, {"text": "🛡️ Audyt", "callback_data": f"aud_{h['symbol']}"}, {"text": "🧮 Planner", "callback_data": f"plan_{h['symbol']}"}], [{"text": f"🌐 Otworz {ex} ({h['symbol']})", "url": get_exchange_url(ex, h['symbol'])}]]}
+                                kb_h = {"inline_keyboard": [[{"text": "➕ Obstawiam", "callback_data": f"addp_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}, {"text": "🛡️ Audyt", "callback_data": f"aud_{h['symbol']}"}, {"text": "🚫 Brak BitBase", "callback_data": f"bbl_{h['symbol']}"}, {"text": "🧮 Planner", "callback_data": f"plan_{h['symbol']}"}], [{"text": f"🌐 Otworz {ex} ({h['symbol']})", "url": get_exchange_url(ex, h['symbol'])}]]}
                                 send_telegram(format_tg_card(h, ex, f" #{idx}"), kb_h)
                                 time.sleep(0.35)
                             if LATEST["near"]:
@@ -1358,6 +1414,9 @@ def tg_listener():
                         cur_l[lk] = not cur_l.get(lk, True)
                         save_settings(st_l)
                         requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": f"✅ Przelaczono warstwe <b>{lk.upper()}</b> -> <b>{'WLACZONA' if cur_l[lk] else 'WYLACZONA'}</b>", "parse_mode": "HTML"}, timeout=15)
+                    elif cb.startswith("bbl_"):
+                        bs = sam.add_to_bitbase_blacklist(cb.replace("bbl_", ""))
+                        send_telegram(f"🚫 Dodano <b>{bs}</b> do czarnej listy BitBase (nadal badana w laboratoriach, zero alertow).")
                     elif cb.startswith("aud_"):
                         sym_a = cb.replace("aud_", "")
                         rep_a = cam.audit_token_contract(sym_a)
@@ -1395,7 +1454,7 @@ def tg_listener():
                                     f"💵 Cena: <code>{h['price']}</code> | 🛑 SL: <code>{h['stop']}</code>\n"
                                     f"✅ TP1: <code>{tps_p.__getitem__(0)}</code> | 💰 TP2: <code>{tps_p.__getitem__(1)}</code> | 🏆 TP3: <code>{tps_p.__getitem__(2)}</code>"
                                 )
-                                kb_p = {"inline_keyboard": [[{"text": f"🧮 Plan ({h['symbol']})", "callback_data": f"plan_{h['symbol']}"}, {"text": "➕ Obstawiam", "callback_data": f"addp_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}, {"text": "🛡️ Audyt", "callback_data": f"aud_{h['symbol']}"}]]}
+                                kb_p = {"inline_keyboard": [[{"text": f"🧮 Plan ({h['symbol']})", "callback_data": f"plan_{h['symbol']}"}, {"text": "➕ Obstawiam", "callback_data": f"addp_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}, {"text": "🛡️ Audyt", "callback_data": f"aud_{h['symbol']}"}, {"text": "🚫 Brak BitBase", "callback_data": f"bbl_{h['symbol']}"}]]}
                                 requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": card_p, "parse_mode": "HTML", "reply_markup": kb_p}, timeout=15)
                     elif cb == "clear_cfd_hist":
                         if os.path.exists(CFD_HIST_FILE): os.remove(CFD_HIST_FILE)
@@ -1410,6 +1469,7 @@ def tg_listener():
         except Exception: time.sleep(2)
 
 def draw_box(title, col, rows):
+    """Realizuje logike: draw box. Parametry: title, col, rows."""
     cols = max(48, shutil.get_terminal_size((52, 24)).columns)
     if cols >= 96:
         w_s = max(5, cols - 1 - (5 + 6 + 56 + 4 + 13))
@@ -1449,6 +1509,7 @@ def draw_box(title, col, rows):
         print(f"{col}└{'─'*w_s}┴─────┴──────┴{'─'*wp}┴{'─'*we}┴{'─'*wsl}┴────┘{W}")
 
 def draw_term():
+    """Realizuje logike: draw term."""
     top_n = load_settings()["top_n"]
     print(f"\n{C}{B}=== WYNIKI ({LATEST['exchange']} | TOP {top_n} | {LATEST['time']}) ==={W}")
     hits = [x for x in LATEST["hits"] if isinstance(x, dict)]
@@ -1475,6 +1536,7 @@ def draw_term():
         print(f"{C}└{'─'*ws}┴─────┴{'─'*wp}┴──────┴{'─'*wm}┘{W}")
 
 def auto_live_loop():
+    """Realizuje logike: auto live loop."""
     while True:
         time.sleep(5)
         if LIVE_ACTIVE and not PROG["running"]:
@@ -1484,6 +1546,7 @@ def auto_live_loop():
                 time.sleep(5)
 
 def fast_loop():
+    """Realizuje logike: fast loop."""
     while True:
         time.sleep(30)
         try: pf.check_positions_guardian(); ds24.update_demo_24h(); ds24.update_demo_pro_24h(); ds24.hourly_demo_pulse()
@@ -1498,6 +1561,7 @@ def fast_loop():
                 send_telegram(f"✅ <b>W ZASIEGU GIELDY! | {info['sym']} ({info['ex']})</b>\nCena w limicie — mozna skladac zlecenie!")
 
 def main():
+    """Realizuje logike: main."""
     mode = sys.argv.__getitem__(1) if len(sys.argv) > 1 else ""
     # Uruchamiamy w tle JEDNOCZESNIE: Bot Telegram, Szybki tracker DALEKO oraz Serwer WWW (Chrome)
     threading.Thread(target=tg_listener, daemon=True).start()
@@ -1611,6 +1675,7 @@ def main():
                     asym = cmd.replace("+", "").strip()
                     if not asym.endswith("USDT"): asym += "USDT"
                     ex_a = "BITGET"
+                    cfg_a = load_settings()
                     p = pm.calc_plan(ex_a, asym, cfg_a["capital"], cfg_a["risk_pct"], 20)
                     if p: pf.add_position(ex_a, asym, p["side"], p["entry"], p["stop"], p["tp"], p["qty"], p["rec_margin"], p["risk_usdt"], p["rec_lev"])
                 elif cmd.startswith("T ") and len(cmd.split()) == 3:
@@ -1634,7 +1699,66 @@ def main():
         elif ch == "0": sys.exit(0)
 
 
+
+def _append_lab_sample(lab_file, src_tag, sym, side, prob, pd_tag, en_v, sl_v):
+    """Realizuje logike: append lab sample. Parametry: lab_file, src_tag, sym, side, prob, pd_tag, en_v, sl_v."""
+    try:
+        arr = json.load(open(lab_file)) if os.path.exists(lab_file) else []
+        now_dt = datetime.now()
+        sd_v = abs(en_v - sl_v) or (en_v * 0.01)
+        td_v = 1 if side == "LONG" else -1
+        arr.append({
+            "ts": now_dt.strftime("%d.%m %H:%M"), "ts_epoch": int(time.time()), "hour": now_dt.hour,
+            "data_type": "LIVE_FORWARD", "src": src_tag, "sym": sym, "side": side,
+            "prob": prob, "pump_dump_tag": pd_tag or "NORMAL",
+            "sl_dist_pct": round((sd_v / max(1e-9, en_v)) * 100.0, 2),
+            "en_f": en_v, "sl_f": sl_v,
+            "tp1_f": round(en_v + td_v * sd_v * 1.0, 6),
+            "tp2_f": round(en_v + td_v * sd_v * 1.5, 6),
+            "tp3_f": round(en_v + td_v * sd_v * 2.5, 6),
+            "status": "OPEN", "res_r": 0.0, "dur_str": "0m", "mfe_r": 0.0, "closed_final": False
+        })
+        json.dump(arr[-200:], open(lab_file, "w"), indent=2)
+    except Exception:
+        pass
+
+def run_wild_market_probe():
+    """Realizuje logike: run wild market probe."""
+    wd.beat('market_labs_30m', 'Start sondy Wild/Micro')
+    for sym in apm.get_wild_61_160_symbols()[:10]:
+        tag = apm.detect_weird_move("BITGET", sym)
+        if tag:
+            kl = fetch_klines("BITGET", sym, "15m", 20)
+            if kl:
+                c = float(kl["c"][-1])
+                side = "SHORT" if "LONG_WICK_HUNT" in tag else "LONG"
+                sl = round(c * (1.018 if side == "SHORT" else 0.982), 6)
+                _append_lab_sample(WILD_LAB_FILE, "WILD_61_160", sym, side, 56, tag, c, sl)
+
+def run_micro_market_probe():
+    """Realizuje logike: run micro market probe."""
+    for sym in apm.get_micro_161_plus_symbols()[:10]:
+        cyc_t, _, pd_t = apm.detect_cyclical_and_pump_dump("BITGET", sym)
+        if pd_t or cyc_t.startswith("CYCLIC_"):
+            kl = fetch_klines("BITGET", sym, "15m", 20)
+            if kl:
+                c = float(kl["c"][-1])
+                side = "SHORT" if "PUMP_DUMP" in pd_t else "LONG"
+                sl = round(c * (1.02 if side == "SHORT" else 0.98), 6)
+                _append_lab_sample(MICRO_LAB_FILE, "MICRO_161_PLUS", sym, side, 56, pd_t or cyc_t, c, sl)
+
+def run_bg_macro_pump_dump():
+    """Realizuje logike: run bg macro pump dump."""
+    wd.beat('macro_pump_dump_30m', 'Skan 140 par P&D')
+    syms = apm.get_all_futures_symbols()[:140]
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        for res in pool.map(apm.scan_macro_pump_dump_coin, syms):
+            if res and time.time() - SEEN_CFD_SIGS.get(f"PD_{res['symbol']}", 0) >= 14400:
+                SEEN_CFD_SIGS[f"PD_{res['symbol']}"] = time.time()
+                send_telegram(f"{res['mode']} — <b>{res['symbol']} ({res['side']})</b>\n🎯 Szansa: <b>{res['win_prob']}%</b> | 🧬 <i>{res['alpha_tag']}</i>\n💵 Cena: <code>{res['price']}</code> | 🛑 SL: <code>{res['stop']}</code>")
+
 def cfd_live_bg_loop():
+    """Realizuje logike: cfd live bg loop."""
     import re
     cycle_cnt = 0
     while True:
@@ -1658,7 +1782,7 @@ def cfd_live_bg_loop():
                             if sl_m_l != 1.0:
                                 td_l = 1 if h["side"] == "LONG" else -1
                                 h["stop"] = round(h["entry"] - td_l * abs(h["entry"] - h["stop"]) * sl_m_l, 6)
-                            if apm.validate_cfd_order(h["entry"], h["stop"], h["price"]) and h.get("win_prob", 0) >= min_p_l:
+                            if h["symbol"] not in sam.get_bitbase_blacklist() and apm.validate_cfd_order(h["entry"], h["stop"], h["price"]) and h.get("win_prob", 0) >= min_p_l:
                                 return h
                     except Exception: pass
                     return None
@@ -1689,7 +1813,7 @@ def cfd_live_bg_loop():
                                 f"🛑 SL: <code>{h['stop']}</code> | ✅ TP1: <code>{tp1_l}</code> | 💰 TP2: <code>{tp2_l}</code>\n"
                                 f"{apm.get_mtf_status_line('BITGET', h['symbol'], h['side'])}\n{pf.check_new_opportunity_margin(h['side'])}"
                             )
-                            kb_l = {"inline_keyboard": [[{"text": f"🧮 Plan ({h['symbol']})", "callback_data": f"plan_{h['symbol']}"}, {"text": "➕ Obstawiam", "callback_data": f"addp_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}, {"text": "🛡️ Audyt", "callback_data": f"aud_{h['symbol']}"}]]}
+                            kb_l = {"inline_keyboard": [[{"text": f"🧮 Plan ({h['symbol']})", "callback_data": f"plan_{h['symbol']}"}, {"text": "➕ Obstawiam", "callback_data": f"addp_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}, {"text": "🛡️ Audyt", "callback_data": f"aud_{h['symbol']}"}, {"text": "🚫 Brak BitBase", "callback_data": f"bbl_{h['symbol']}"}]]}
                             requests.post(tg_url(tok_l, "sendMessage"), json={"chat_id": cid_l, "text": card_l, "parse_mode": "HTML", "reply_markup": kb_l}, timeout=15)
                 else:
                     # Co 2 cykle (co 30 min) wysylamy cichy Puls Zycia, zeby bylo wiadomo ze radar CFD pracuje
@@ -1716,6 +1840,12 @@ def cfd_live_bg_loop():
                 cycle_cnt += 1
         except Exception as err:
             print("CFD_LIVE_ERR:", err)
+        wd.beat('cfd_live_scanner', f'Przeskanowano {len(top_cfd)} par')
+        healed, crit = wd.check_and_heal_modules()
+        if healed:
+            send_telegram('🛠️ <b>AUTO-HEALING WATCHDOG:</b>\n' + '\n'.join(healed))
+        if crit:
+            send_telegram('🚨 <b>WATCHDOG KRYTYCZNY:</b>\n' + '\n'.join(crit) + '\n<i>Przeslij caly_projekt.txt do AI!</i>')
         time.sleep(900)
 
 
@@ -1724,6 +1854,7 @@ def cfd_live_bg_loop():
 ACTIVE_TP_ALERTS = set()
 
 def fast_active_positions_loop():
+    """Realizuje logike: fast active positions loop."""
     while True:
         try:
             sm = pf.get_portfolio_summary()
@@ -1773,20 +1904,53 @@ def fast_active_positions_loop():
                             requests.post(tg_url(tok_g, "sendMessage"), json={"chat_id": cid_g, "text": f"🚨 <b>UWAGA SL — {sym} ({side})!</b>\nCena (<code>{fmt_p(cur).strip()}</code>) zblizyla sie na 20% do Stop Lossa (<code>{fmt_p(stop).strip()}</code>). Sprawdz czy SL na gieldzie jest poprawnie wpisany!", "parse_mode": "HTML"}, timeout=15)
         except Exception as err:
             print("FAST_GUARDIAN_ERR:", err)
+        wd.beat('fast_guardian_60s', f'Pozycje: {len(pos_list) if pos_list else 0}')
         time.sleep(60)
 
 
 
 
+
+def build_ai_context_bundle():
+    """Sklada caly aktualny projekt w plik caly_projekt.txt."""
+    import glob, subprocess
+    out_paths = ["caly_projekt.txt", "/storage/emulated/0/Download/caly_projekt.txt"]
+    files = sorted(glob.glob("*.py") + glob.glob("*.md")) + [
+        "market_shadow_lab.json", "wild_market_lab.json",
+        "micro_market_lab.json", "tuner_state.json", "qa_health_history.json"
+    ]
+    parts = []
+    for fn in files:
+        if os.path.exists(fn):
+            try:
+                content = open(fn, "r", encoding="utf-8", errors="ignore").read()
+                parts.append(f"==> {fn} <==\n{content}")
+            except Exception:
+                pass
+    full_txt = "\n\n".join(parts)
+    for op in out_paths:
+        try:
+            with open(op, "w", encoding="utf-8") as out_f:
+                out_f.write(full_txt)
+        except Exception:
+            pass
+    try:
+        subprocess.run(["termux-media-scan", "/storage/emulated/0/Download/caly_projekt.txt"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
 def github_auto_sync_loop():
+    """Realizuje logike: github auto sync loop."""
     import subprocess, py_compile, glob
     while True:
+        wd.beat('github_sync_5m', 'Cykl kontrolny 5m')
         time.sleep(300)
         try:
             st_out = subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()
             if st_out:
                 for f in glob.glob("*.py"):
                     py_compile.compile(f, doraise=True)
+                build_ai_context_bundle()
                 subprocess.run(["git", "add", "-f", "*.py", "*.md", ".gitignore"], check=False)
                 subprocess.run(["git", "commit", "-m", f"Live-sync {datetime.now().strftime('%Y-%m-%d %H:%M')}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 r_p = subprocess.run(["git", "push", "origin", "main"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -1802,6 +1966,7 @@ def github_auto_sync_loop():
 
 
 def daily_healthcheck_loop():
+    """Realizuje logike: daily healthcheck loop."""
     import self_test
     while True:
         time.sleep(86400)
@@ -1819,6 +1984,11 @@ import sys, web_ui_mod
 web_ui_mod.register_web_ui(app, sys.modules[__name__], apm, atm, cam, wpr)
 
 if __name__ == "__main__":
+    wd.register_worker('cfd_live_scanner', cfd_live_bg_loop)
+    wd.register_worker('fast_guardian_60s', fast_active_positions_loop)
+    wd.register_worker('github_sync_5m', github_auto_sync_loop)
+    for k in wd.LIMITS_SEC: wd.beat(k, 'Start systemu')
+    build_ai_context_bundle()
     threading.Thread(target=daily_healthcheck_loop, daemon=True).start()
     threading.Thread(target=github_auto_sync_loop, daemon=True).start()
     threading.Thread(target=cfd_live_bg_loop, daemon=True).start()

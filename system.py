@@ -85,6 +85,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 # =====================================================================
 
 def get_json(url, **params):
+    """Realizuje logike: get json. Parametry: url."""
     last_error = None
     for attempt in range(5):
         try:
@@ -104,6 +105,7 @@ def get_json(url, **params):
 
 
 def fetch_history_cached(interval, wanted):
+    """Realizuje logike: fetch history cached. Parametry: interval, wanted."""
     cache_path = os.path.join(CACHE_DIR, f"{SYMBOL}_{interval}_{wanted}.json")
     if os.path.exists(cache_path):
         print(f"Wczytuje {interval} z pamieci lokalnej ({cache_path})...")
@@ -153,6 +155,7 @@ def fetch_history_cached(interval, wanted):
 
 
 def fetch_live_klines(interval, limit):
+    """Realizuje logike: fetch live klines. Parametry: interval, limit."""
     now_ms = int(time.time() * 1000)
     raw = get_json(
         BASE + "/fapi/v1/klines",
@@ -173,6 +176,7 @@ def fetch_live_klines(interval, limit):
 
 
 def fetch_funding_cached(start_ms, end_ms):
+    """Realizuje logike: fetch funding cached. Parametry: start_ms, end_ms."""
     cache_path = os.path.join(CACHE_DIR, f"{SYMBOL}_funding.json")
     if os.path.exists(cache_path):
         print("Wczytuje historyczny funding z pamieci lokalnej...")
@@ -214,6 +218,7 @@ def fetch_funding_cached(start_ms, end_ms):
 
 
 def ema(values, period):
+    """Realizuje logike: ema. Parametry: values, period."""
     if not values:
         return []
     alpha = 2.0 / (period + 1.0)
@@ -226,6 +231,7 @@ def ema(values, period):
 
 
 def atr(high, low, close, period=ATR_N):
+    """Realizuje logike: atr. Parametry: high, low, close, period."""
     n = len(close)
     result = [0.0] * n
     if n <= period:
@@ -248,6 +254,7 @@ def atr(high, low, close, period=ATR_N):
 
 
 def adx(high, low, close, period=14):
+    """Realizuje logike: adx. Parametry: high, low, close, period."""
     n = len(close)
     result = [0.0] * n
     if n < 2 * period + 1:
@@ -294,6 +301,7 @@ def adx(high, low, close, period=14):
 
 
 def trend(close):
+    """Realizuje logike: trend. Parametry: close."""
     e20 = ema(close, 20)
     e50 = ema(close, 50)
     out = []
@@ -310,6 +318,7 @@ def trend(close):
 
 
 def breakout(h1, i, direction):
+    """Realizuje logike: breakout. Parametry: h1, i, direction."""
     if i < LEVEL_CANDLES:
         return False
     if direction == 1:
@@ -318,6 +327,7 @@ def breakout(h1, i, direction):
 
 
 def evaluate_filters(d1, h1, e200, a, adx_vals, daily_idx, i, direction):
+    """Realizuje logike: evaluate filters. Parametry: d1, h1, e200, a, adx_vals, daily_idx, i, direction."""
     vol_ok = (
         i >= 20
         and h1["v"][i] >= VOL_MULT * mean(h1["v"][i - 20:i])
@@ -344,6 +354,7 @@ def evaluate_filters(d1, h1, e200, a, adx_vals, daily_idx, i, direction):
 # =====================================================================
 
 def simulate_trade(data, i, direction, stop_atr=STOP_ATR, trail_atr=TRAIL_ATR, fee_side=FEE_SIDE_PCT):
+    """Realizuje logike: simulate trade. Parametry: data, i, direction, stop_atr, trail_atr, fee_side."""
     h1 = data["H1"]
     entry_index = i + 1
     end_index = min(i + HORIZON, len(h1["c"]) - 1)
@@ -419,6 +430,7 @@ def simulate_trade(data, i, direction, stop_atr=STOP_ATR, trail_atr=TRAIL_ATR, f
 
 
 def calc_metrics(trades):
+    """Realizuje logike: calc metrics. Parametry: trades."""
     if not trades:
         return {"n": 0, "wr": 0.0, "avg_r": 0.0, "pf": 0.0, "dd": 0.0, "bal": INITIAL_CAPITAL}
 
@@ -445,6 +457,7 @@ def calc_metrics(trades):
 
 
 def run_bt_strategy(data, active_filters, start_idx=60, end_idx=None):
+    """Realizuje logike: run bt strategy. Parametry: data, active_filters, start_idx, end_idx."""
     h1 = data["H1"]
     n = len(h1["c"])
     if end_idx is None:
@@ -473,6 +486,7 @@ def run_bt_strategy(data, active_filters, start_idx=60, end_idx=None):
 
 
 def run_full_backtest():
+    """Realizuje logike: run full backtest."""
     random.seed(SEED)
     d1 = fetch_history_cached("1d", D1_CANDLES)
     h4 = fetch_history_cached("4h", H4_CANDLES)
@@ -578,6 +592,7 @@ def run_full_backtest():
 # =====================================================================
 
 def get_symbol_rules():
+    """Realizuje logike: get symbol rules."""
     info = get_json(BASE + "/fapi/v1/exchangeInfo")
     symbol_info = next(item for item in info["symbols"] if item["symbol"] == SYMBOL)
     filters = {item["filterType"]: item for item in symbol_info["filters"]}
@@ -597,6 +612,7 @@ def get_symbol_rules():
 
 
 def round_qty_down(quantity, step):
+    """Realizuje logike: round qty down. Parametry: quantity, step."""
     q = Decimal(str(quantity))
     s = Decimal(str(step))
     if s <= 0:
@@ -605,6 +621,7 @@ def round_qty_down(quantity, step):
 
 
 def run_live_check():
+    """Realizuje logike: run live check."""
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "r") as f:
             cfg = json.load(f)
@@ -715,6 +732,7 @@ def run_live_check():
 TG_CONFIG_FILE = "tg_config.json"
 
 def send_telegram(msg):
+    """Realizuje logike: send telegram. Parametry: msg."""
     if not os.path.exists(TG_CONFIG_FILE):
         return
     with open(TG_CONFIG_FILE, "r") as f:
@@ -733,6 +751,7 @@ def send_telegram(msg):
         print(f"  {Y}Blad wysylania Telegram: {e}{W}")
 
 def setup_telegram():
+    """Realizuje logike: setup telegram."""
     if os.path.exists(TG_CONFIG_FILE):
         return
     print(f"\n{C}{B}--- KONFIGURACJA TELEGRAMA (opcjonalnie) ---{W}")
@@ -749,6 +768,7 @@ def setup_telegram():
     print(f"{G}Zapisano i wyslano wiadomosc testowa na Telegrama!{W}")
 
 def main():
+    """Realizuje logike: main."""
     while True:
         print(f"\n{C}{B}===================================================={W}")
         print(f"{C}{B}   BTCUSDT SYSTEM (BACKTEST + LIVE COLLECTOR)       {W}")

@@ -17,6 +17,7 @@ DEX_TO_GOPLUS = {
 }
 
 def audit_token_contract(symbol_or_ticker):
+    """Audytuje smart-kontrakt przez DexScreener i GoPlus API. Parametry: symbol_or_ticker."""
     clean = str(symbol_or_ticker).upper().replace("USDT", "").replace("PERP", "").strip()
     if clean in ("BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "DOT", "LINK", "LTC", "BCH"):
         return f"🛡️ <b>AUDYT KONTRAKTU ({clean}):</b> Natywna moneta warstwy L1 / Blue-Chip (brak ryzyka ukrytego smart-kontraktu SCAM)."
@@ -24,7 +25,7 @@ def audit_token_contract(symbol_or_ticker):
     headers = {"User-Agent": "Mozilla/5.0 CryptoProAudit/1.0"}
     try:
         # Krok 1: Wyszukanie adresu kontraktu i sieci przez DexScreener
-        ds = requests.get(f"https://dexscreener.com{clean}", headers=headers, timeout=6).json()
+        ds = requests.get("".join(["https://dexscreener.com", "/latest/dex/search?q=", clean]), headers=headers, timeout=6).json()
         pairs = ds.get("pairs") or []
         best_p = None
         for p in pairs:
@@ -43,9 +44,9 @@ def audit_token_contract(symbol_or_ticker):
 
         # Krok 2: Skanowanie kodu zrodlowego kontraktu przez GoPlus Security API
         if gp_chain == "solana":
-            gp_url = f"https://gopluslabs.io{addr}"
+            gp_url = "".join(["https://gopluslabs.io", "/api/v1/solana/token_security?contract_addresses=", addr])
         else:
-            gp_url = f"https://gopluslabs.io{gp_chain}?contract_addresses={addr}"
+            gp_url = "".join(["https://gopluslabs.io", "/api/v1/token_security/", gp_chain, "?contract_addresses=", addr])
 
         gp = requests.get(gp_url, headers=headers, timeout=7).json()
         res_map = gp.get("result") or {}

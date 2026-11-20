@@ -2,6 +2,7 @@ import os, json, re, sys, py_compile
 
 def run_full_self_test():
     # 1. Skladnia wszystkich plikow .py
+    """Realizuje logike: run full self test."""
     req_files = ["crypto_pro.py", "alpha_pro_mod.py", "auto_tuner_mod.py", "portfolio_mod.py", "planner_mod.py", "chart_mod.py", "demo_sim_mod.py"]
     for fn in req_files:
         if not os.path.exists(fn):
@@ -42,8 +43,8 @@ def run_full_self_test():
 
     # 6. Detektory specjalne: Macro Pump & Dump (4H/1D), Cyklicznosc oraz Dziwne Ruchy
     apm.scan_macro_pump_dump_coin("BTCUSDT")
-    cyc_t, _, _ = apm.detect_cyclical_and_pump_dump("BITGET", m60)
-    weird_t = apm.detect_weird_move("BITGET", w80)
+    cyc_t, _, _ = apm.detect_cyclical_and_pump_dump("BITGET", m60[0])
+    weird_t = apm.detect_weird_move("BITGET", w80[0])
     if cyc_t == "ERR":
         raise RuntimeError("Blad detektora cyklicznosci i Pump & Dump!")
 
