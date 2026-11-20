@@ -1355,6 +1355,10 @@ def tg_listener():
                         sym_a = cb.replace("aud_", "")
                         rep_a = cam.audit_token_contract(sym_a)
                         requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": rep_a, "parse_mode": "HTML"}, timeout=15)
+                    elif cb == "open_chrome_ui":
+                        import subprocess
+                        subprocess.Popen(["termux-open-url", "http://127.0.0.1:5000"])
+                        requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": "🌐 <b>Otwieram Pulpit PRO 2.0 w Chrome...</b>\nAdres: <a href=\"http://127.0.0.1:5000\">http://127.0.0.1:5000</a>", "parse_mode": "HTML"}, timeout=10)
                     elif cb == "scan_pd":
                         p_msg = requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": "🚀 <b>Skanuję WSZYSTKIE pary na giełdzie (7 wzorców Pump & Dump + Wywiad Sieciowy)...</b>\n<code>[░░░░░░░░░░] 0%</code>", "parse_mode": "HTML"}, timeout=15).json()
                         p_mid = p_msg.get("result", {}).get("message_id")
@@ -1796,6 +1800,9 @@ def daily_healthcheck_loop():
             tc_h = json.load(open(TG_CONFIG_FILE)) if os.path.exists(TG_CONFIG_FILE) else {}
             if tc_h.get("token") and tc_h.get("chat_id"):
                 requests.post(tg_url(tc_h["token"].strip(), "sendMessage"), json={"chat_id": tc_h["chat_id"].strip(), "text": f"🚨 <b>ALARM ZDROWIA SYSTEMU (24H):</b>\n❌ Wykryto usterke podczas autotestu: <code>{hc_err}</code>", "parse_mode": "HTML"}, timeout=15)
+
+import sys, web_ui_mod
+web_ui_mod.register_web_ui(app, sys.modules[__name__], apm, atm, cam, wpr)
 
 if __name__ == "__main__":
     threading.Thread(target=daily_healthcheck_loop, daemon=True).start()

@@ -281,7 +281,7 @@ def get_all_futures_symbols():
         for it in r.get("data", []):
             sym = it.get("symbol", "")
             vol_u = float(it.get("usdtVolume", 0) or 0)
-            if sym.endswith("USDT") and vol_u > 0:
+            if sym.endswith("USDT") and vol_u >= 25000:
                 rows.append((sym, vol_u))
         rows.sort(key=lambda x: -x[1])
         return [x[0] for x in rows]
