@@ -34,3 +34,9 @@ Pełny zapis wszystkich wdrożonych zmian od początku projektu znajduje się w 
 - `wild_market_lab.json` — Próbka badawcza dla średnich/dzikich par `61–160` z detektorem anomalii wolumenu i knotów.
 - `micro_market_lab.json` — Próbka badawcza dla niszowych par `161+` z detektorem cykliczności wybić.
 - `tuner_state.json` — Aktualny stan i historia korekt samooptymalizującego się `Auto-Tunera`.
+
+
+## 📜 Zbiorczy Pakt Obostrzeń i Zasada Podwójnej Naprawy
+- **Zasada Podwójnej Naprawy:** Każdy błąd zgłoszony przez użytkownika jest naprawiany w kodzie ORAZ dopisywany jako nowa reguła samoleczenia w `auto_repair_mod.py`, aby wyeliminować jego powrót w przyszłości.
+- **Auto-Discovery & Upgrade Gate:** Każdy plik `*_mod.py` podlega automatycznie pod audyt `QA 5.0 PRO+`, a modyfikacje przechodzą przez bramkę bezpieczeństwa i test efektywności A/B w `upgrade_gate_mod.py`.
+- **Moduły AI i Nadzoru (Etapy 1–20):** `sniper_doctor_mod.py`, `smart_sl_mod.py`, `inst_orderflow_mod.py`, `ai_quant_mod.py`, `evolution_lab_mod.py`, `future_quantum_mod.py`, `quantum_nash_mod.py`, `meta_brain_mod.py`, `nzt_cortex_mod.py`, `quant_edge_pro_mod.py`, `upgrade_gate_mod.py`, `report_24h_mod.py`, `watchdog_mod.py`, `auto_repair_mod.py`, `session_analytics_mod.py`.

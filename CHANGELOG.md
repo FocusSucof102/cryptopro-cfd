@@ -57,3 +57,13 @@
   3. `micro_market_lab.json` (`TOP 161+`, obrót `<1M$`) — detektor cykliczności wybić godzinowych (`CYCLIC_XH`).
 - **Skaner & Auto-Radar `Macro Pump & Dump (4H/1D)`:** Przycisk `🚀 Pump & Dump` w menu Telegrama oraz skan w tle co 30 min dla 140 kontraktów (wykrywanie wczesnych wybić z bazy `LONG` oraz załamań po paraboli typu `RAVEUSDT` pod `MA7 4H` dla `SHORT`).
 - **Stabilizacja 24/7 w Androidzie (`termux-wake-lock`):** Utrzymywanie procesów przy zminimalizowanym oknie Termuxa oraz ciągły eksport zanonimizowanych plików badawczych na GitHub co 5 minut.
+
+## Etap 8–12: Nadzór QA 5.0 PRO+, Auto-Repair, Watchdog, Sniper Mode i Instytucjonalny Orderflow
+- **4 Warstwy Ochrony (`smart_verify.py`, `auto_repair_mod.py`, `watchdog_mod.py`):** Analiza AST (`Scope-Guard`, `Call-Guard`, `Docstring-Guard`), samoleczenie wcięć/importów/JSON/Git oraz automatyczny restart zawieszonych pętli po 3 brakach bez utraty danych.
+- **Sniper Mode & Smart SL (`sniper_doctor_mod.py`, `smart_sl_mod.py`):** Zgodność z reżimem BTC, blokada długich knotów `>45%`, SL `1.8x ATR` + SMC + Break-Even `+0.12R` + Trailing `2.2x ATR` + bezpiecznik likwidacji, przycisk `🩺 Diagnoza Konta` oraz instrukcje **👉 CO TERAZ ZROBIĆ**.
+- **Wielopoziomowy Auto-Tuner (`45–100%`) + Bezpiecznik Anty-Przestojowy 6h + Orderbook Imbalance & Makro Shield (`inst_orderflow_mod.py`):** Blokada ścian płynności przed TP1 oraz ochrona przed publikacjami danych USA (CPI/NFP/FOMC).
+
+## Etap 13–20: Pakiet Kwantytatywny AI Quant, NZT-48 Cortex, Meta-Brain i Sprint 24H
+- **AI Quant & Ewolucja (`ai_quant_mod.py`, `evolution_lab_mod.py`, `quant_edge_pro_mod.py`):** Algorytm `KNN Pattern Matcher` z zanikiem czasowym `Liquid Decay`, macierz `Lead-Lag` (`BTC+ETH+SOL -> Alty`), `Fractional Kelly 0.25x`, `CHOP Shield`, korelacja Pearsona w portfelu, `Binance Futures Lead`, `Coin Fingerprinting` oraz `EVT Tail Shield`.
+- **Technologie Przyszłości & Samouczenie (`future_quantum_mod.py`, `quantum_nash_mod.py`, `meta_brain_mod.py`, `nzt_cortex_mod.py`):** Entropia Shannona, `Whale Iceberg Absorption`, `Red-Team AI` (5-punktowe weto), `Quantum Wave Interference`, `Nash Predator Trap`, wagi `Meta-Brain` (`0.25x–2.00x`) oraz uczenie kontrfaktyczne z odrzuceń (`NZT-48 Cortex`).
+- **Bramka Aktualizacji A/B (`upgrade_gate_mod.py`) & Czarna Skrzynka 24H (`report_24h_mod.py`):** Testy piaskownicy przed wdrożeniem zmian, licznik lejka odrzuceń `funnel_stats.json`, dziennik decyzji AI oraz automatyczny eksport `raport_24h_dla_ai.txt`.
