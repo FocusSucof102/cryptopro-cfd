@@ -1,6 +1,6 @@
 # 🧠 ŻYWA PAMIĘĆ SESJI AI
-*Aktualizacja: 2026-11-20 21:19:29*
+*Aktualizacja: 2026-11-21 12:17:54*
 
-## 🛡️ AUTO-NADZÓR + AUTO-DISCOVERY + UPGRADE GATE:
-- Naprawiono 5 cichych bugów przepływu danych (`bins` w Entropii, `tp[0]` w Orderbook Walls, próg `45%` w `_live_w` dla `Shadow Lab` oraz zapisywanie pełnych tagów i punktów `Meta-Brain` do obiektu sygnału).
-- System gotowy do 24-godzinnej autonomicznej pracy i zbierania próbek `LIVE_FORWARD`.
+## 🛡️ PAKT OBOSTRZEŃ + ZASADA PODWÓJNEJ NAPRAWY:
+- Wszystkie obostrzenia wpisane do `README.md` i `CHANGELOG.md`.
+- Odblokowano przepływ TOP-100 (`4H+1H`, strefa `1.8 ATR`) i uruchomiono czysty Sprint 24H.
