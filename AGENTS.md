@@ -1,0 +1,5 @@
+# 🎯 CEL PROJEKTU I INSTRUKCJA DLA AGENTA AI (CRYPTO PRO CFD)
+1. **Cel główny:** Autonomiczny system analityczno-egzekucyjny pod handel **BitBase Futures / CFD** (dane z Bitget USDT-Futures), maksymalizujący zysk netto w `R` po prowizji (`-0.07R` na transakcję) przy ścisłej ochronie kapitału.
+2. **Obowiązkowy kontekst:** Przed każdą zmianą przeczytaj `README.md`, `CHANGELOG.md` oraz `AI_SESSION_STATE.md`. Nigdy nie ujawniaj tokenów/kluczy i nie przywracaj zablokowanych API (Binance/Bybit jako główne źródło).
+3. **Pętla testów i auto-korekty:** Po każdej modyfikacji uruchom `python smart_verify.py` (QA 5.0 PRO+ AST/Scope-Guard). Jeśli wystąpi błąd, zastosuj **Zasadę Podwójnej Naprawy**: napraw kod ORAZ dopisz regułę samoleczenia do `auto_repair_mod.py`.
+4. **Kierunek rozwoju:** Analizuj wyniki z `raport_24h_dla_ai.txt`, `meta_brain_weights.json`, `nzt_synapses.json` i `funnel_stats.json`, wzmacniając moduły o najwyższym dodatnim `net_r` i eliminując filtry generujące fałszywe odrzucenia.
