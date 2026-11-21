@@ -55,7 +55,7 @@ CONFIG_FILE, TG_CONFIG_FILE, SETTINGS_FILE, CSV_FILE = "config_live.json", "tg_c
 EXCHANGES = ["BINANCE", "BYBIT", "BITGET", "WEEX", "BITBASE"]
 EX_MAX_DEV = {"BINANCE": 5.0, "BYBIT": 5.0, "BITGET": 5.0, "WEEX": 3.0, "BITBASE": 4.0}
 MAX_LEV, MAX_MARGIN_FRACTION, FEE_SIDE_PCT, SLIPPAGE_BPS = 100, 0.80, 0.05, 2.0
-LEVEL_CANDLES, STOP_ATR, NEAR_ATR, ATR_N, ADX_MIN, VOL_MULT = 48, 1.8, 1.0, 14, 20, 1.5
+LEVEL_CANDLES, STOP_ATR, NEAR_ATR, ATR_N, ADX_MIN, VOL_MULT = 48, 1.8, 1.8, 14, 20, 1.5
 WATCH_EVERY, TIMEOUT = 300, 15
 
 G, R, Y, C, B, W = "\033[92m", "\033[91m", "\033[93m", "\033[96m", "\033[1m", "\033[0m"
@@ -323,10 +323,9 @@ def _scan_one_coin(args):
     """Realizuje logike: scan one coin. Parametry: args."""
     ex, sym, price, rules, enabled, cap, rpct = args
     d1 = fetch_klines(ex, sym, "1d", 220)
-    if not d1 or get_trend(d1["c"]) == 0: return None
-    td = get_trend(d1["c"])
     h4 = fetch_klines(ex, sym, "4h", 80)
-    if not h4 or get_trend(h4["c"]) != td: return None
+    if not d1 or not h4 or get_trend(h4["c"]) == 0: return None
+    td = get_trend(h4["c"])
     h1 = fetch_klines(ex, sym, "1h", 120)
     if not h1 or get_trend(h1["c"]) != td: return None
     m15 = fetch_klines(ex, sym, "15m", 70)

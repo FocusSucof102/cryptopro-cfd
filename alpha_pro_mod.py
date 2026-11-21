@@ -160,11 +160,11 @@ def get_cfd_top60_symbols():
         for it in r.get("data", []):
             sym = it.get("symbol", "")
             vol_u = float(it.get("usdtVolume", 0) or 0)
-            if sym.endswith("USDT") and vol_u >= 10000000:
+            if sym.endswith("USDT") and vol_u >= 3000000:
                 rows.append((sym, vol_u))
         rows.sort(key=lambda x: -x.__getitem__(1))
         if len(rows) >= 25:
-            syms = [x.__getitem__(0) for x in rows.__getitem__(slice(0, 60))]
+            syms = [x.__getitem__(0) for x in rows.__getitem__(slice(0, 100))]
             CACHE_TOP60.update({"ts": now, "syms": syms})
             return syms
     except Exception:
@@ -250,7 +250,7 @@ def get_micro_161_plus_symbols():
             if sym.endswith("USDT") and 50000 <= vol_u < 1000000:
                 rows.append((sym, vol_u))
         rows.sort(key=lambda x: -x.__getitem__(1))
-        return [x.__getitem__(0) for x in rows.__getitem__(slice(0, 60))]
+        return [x.__getitem__(0) for x in rows.__getitem__(slice(0, 100))]
     except Exception:
         return []
 
