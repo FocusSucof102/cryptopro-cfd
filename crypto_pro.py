@@ -324,10 +324,11 @@ def _scan_one_coin(args):
     ex, sym, price, rules, enabled, cap, rpct = args
     d1 = fetch_klines(ex, sym, "1d", 220)
     h4 = fetch_klines(ex, sym, "4h", 80)
-    if not d1 or not h4 or get_trend(h4["c"]) == 0: return None
+    if not d1 or not h4: return None
     td = get_trend(h4["c"])
     h1 = fetch_klines(ex, sym, "1h", 120)
-    if not h1 or get_trend(h1["c"]) != td: return None
+    if not h1 or get_trend(h1["c"]) == 0: return None
+    td = get_trend(h1["c"])
     m15 = fetch_klines(ex, sym, "15m", 70)
     if not m15: return None
 
@@ -343,7 +344,7 @@ def _scan_one_coin(args):
     ext_atr = td * (price - level) / atr_val
     e200, adx_v = ema(d1["c"], 200), adx(h1["h"], h1["l"], h1["c"])
     f_vals = {"adx": adx_v[i] >= ADX_MIN, "vol": h1["v"][i] >= VOL_MULT * mean(h1["v"][i - 20:i]), "macro": (d1["c"][-1] > e200[-1]) == (td == 1)}
-    missing = [k for k in enabled if not f_vals.get(k, False)]
+    missing = []
 
     if beyond_now and beyond_15m and ext_atr <= NEAR_ATR and not missing: is_trig = True
     elif not beyond_now and dist_atr <= NEAR_ATR and not missing: is_trig = False
@@ -1218,7 +1219,8 @@ def tg_listener():
                                         lb = 5 if ((h["side"] == "LONG" and ld == 1) or (h["side"] == "SHORT" and ld == -1)) else 0
                                         kl_q = fetch_klines("BITGET", h["symbol"], "15m", 35)
                                         reg_k, reg_b, reg_tag = elm.detect_volatility_regime(kl_q)
-                                        _, ok_ent, ent_tag = fqm.calc_shannon_entropy(kl_q)
+                                        ent_v, ok_ent, ent_tag = fqm.calc_shannon_entropy(kl_q)
+                                        ent_b = 4 if ent_v < 0.68 else (-5 if not ok_ent else 0)
                                         ok_rt, rt_b, rt_tag = fqm.detect_whale_iceberg_and_redteam(h["side"], kl_q)
                                         qw_b, qw_tag = qnm.quantum_wave_interference(h["side"], h["entry"], h["tp"].__getitem__(0), h["stop"], kl_q)
                                         ok_nash, nash_b, nash_tag = qnm.detect_nash_predator_trap(h["side"], kl_q)
@@ -1226,16 +1228,16 @@ def tg_listener():
                                         sl_fp, fp_b, fp_tag = qep.profile_coin_fingerprint(kl_q)
                                         ok_tail, soc_b, tail_tag = qep.check_extreme_tail_and_social(h["symbol"], kl_q, [])
                                         if sl_fp != 1.0: h["stop"] = round(h["entry"] - (h["entry"] - h["stop"]) * sl_fp, 6)
-                                        ai_pts = mbm.apply_brain_weights(ob_b, kb, lb, reg_b, rt_b, qw_b) + nash_b + bn_b + fp_b + soc_b
+                                        ai_pts = mbm.apply_brain_weights(ob_b, kb, lb, reg_b, rt_b, qw_b) + nash_b + bn_b + fp_b + soc_b + ent_b
                                         h["win_prob"] = max(45, min(96, int(h.get("win_prob", 55)) + ai_pts))
                                         extra_tags = [x for x in (ob_tag, kt, lt if lb else "", reg_tag, ent_tag, rt_tag, qw_tag, nash_tag, fp_tag, bn_tag if bn_b else "") if x]
                                         h["alpha_tag"] = " | ".join(([h["alpha_tag"]] if h.get("alpha_tag") else []) + extra_tags)
-                                        if not (ok_ob and ok_k and reg_k != "CHOP" and ok_ent and ok_rt and ok_nash):
-                                            why_rej = "+".join([nm for flg, nm in ((ok_ob, "OB_WALL"), (ok_k, "KNN"), (reg_k != "CHOP", "CHOP_SHIELD"), (ok_ent, "ENTROPY"), (ok_rt, "RED_TEAM"), (ok_nash, "NASH_TRAP"), (ok_tail, "TAIL_LOCK")) if not flg]) or "SNIPER_FILTER"
+                                        if not (ok_ob and ok_k and reg_k != "CHOP" and ok_rt and ok_nash):
+                                            why_rej = "+".join([nm for flg, nm in ((ok_ob, "OB_WALL"), (ok_k, "KNN"), (reg_k != "CHOP", "CHOP_SHIELD"), (ok_rt, "RED_TEAM"), (ok_nash, "NASH_TRAP"), (ok_tail, "TAIL_LOCK")) if not flg]) or "SNIPER_FILTER"
                                             nzt.record_rejected_hypothesis(h["symbol"], h["side"], h["entry"], h["stop"], why_rej)
-                                            for flg, nm in ((ok_ob, "OB_WALL"), (ok_k, "KNN"), (reg_k != "CHOP", "CHOP_SHIELD"), (ok_ent, "ENTROPY"), (ok_rt, "RED_TEAM"), (ok_nash, "NASH_TRAP")):
+                                            for flg, nm in ((ok_ob, "OB_WALL"), (ok_k, "KNN"), (reg_k != "CHOP", "CHOP_SHIELD"), (ok_rt, "RED_TEAM"), (ok_nash, "NASH_TRAP")):
                                                 if not flg: r24.record_funnel_drop(nm)
-                                        if ok_ob and ok_k and reg_k != "CHOP" and ok_ent and ok_rt and ok_nash and ok_tail and h["symbol"] not in sam.get_bitbase_blacklist() and sdm.check_sniper_quality(h["side"], btc_d, fetch_klines("BITGET", h["symbol"], "15m", 5))[0] and apm.validate_cfd_order(h["entry"], h["stop"], h["price"]) and h.get("win_prob", 0) >= min_p_dyn:
+                                        if ok_ob and ok_k and reg_k != "CHOP" and ok_rt and ok_nash and ok_tail and h["symbol"] not in sam.get_bitbase_blacklist() and sdm.check_sniper_quality(h["side"], btc_d, fetch_klines("BITGET", h["symbol"], "15m", 5))[0] and apm.validate_cfd_order(h["entry"], h["stop"], h["price"]) and h.get("win_prob", 0) >= min_p_dyn:
                                             return h
                                     return None
                                 done_c = 0
@@ -1830,7 +1832,8 @@ def cfd_live_bg_loop():
                             lb = 5 if ((h["side"] == "LONG" and ld == 1) or (h["side"] == "SHORT" and ld == -1)) else 0
                             kl_q = fetch_klines("BITGET", h["symbol"], "15m", 35)
                             reg_k, reg_b, reg_tag = elm.detect_volatility_regime(kl_q)
-                            _, ok_ent, ent_tag = fqm.calc_shannon_entropy(kl_q)
+                            ent_v, ok_ent, ent_tag = fqm.calc_shannon_entropy(kl_q)
+                            ent_b = 4 if ent_v < 0.68 else (-5 if not ok_ent else 0)
                             ok_rt, rt_b, rt_tag = fqm.detect_whale_iceberg_and_redteam(h["side"], kl_q)
                             qw_b, qw_tag = qnm.quantum_wave_interference(h["side"], h["entry"], h["tp"].__getitem__(0), h["stop"], kl_q)
                             ok_nash, nash_b, nash_tag = qnm.detect_nash_predator_trap(h["side"], kl_q)
@@ -1838,16 +1841,16 @@ def cfd_live_bg_loop():
                             sl_fp, fp_b, fp_tag = qep.profile_coin_fingerprint(kl_q)
                             ok_tail, soc_b, tail_tag = qep.check_extreme_tail_and_social(h["symbol"], kl_q, [])
                             if sl_fp != 1.0: h["stop"] = round(h["entry"] - (h["entry"] - h["stop"]) * sl_fp, 6)
-                            ai_pts = mbm.apply_brain_weights(ob_b, kb, lb, reg_b, rt_b, qw_b) + nash_b + bn_b + fp_b + soc_b
+                            ai_pts = mbm.apply_brain_weights(ob_b, kb, lb, reg_b, rt_b, qw_b) + nash_b + bn_b + fp_b + soc_b + ent_b
                             h["win_prob"] = max(45, min(96, int(h.get("win_prob", 55)) + ai_pts))
                             extra_tags = [x for x in (ob_tag, kt, lt if lb else "", reg_tag, ent_tag, rt_tag, qw_tag, nash_tag, fp_tag, bn_tag if bn_b else "") if x]
                             h["alpha_tag"] = " | ".join(([h["alpha_tag"]] if h.get("alpha_tag") else []) + extra_tags)
-                            if not (ok_ob and ok_k and reg_k != "CHOP" and ok_ent and ok_rt and ok_nash):
-                                why_rej = "+".join([nm for flg, nm in ((ok_ob, "OB_WALL"), (ok_k, "KNN"), (reg_k != "CHOP", "CHOP_SHIELD"), (ok_ent, "ENTROPY"), (ok_rt, "RED_TEAM"), (ok_nash, "NASH_TRAP"), (ok_tail, "TAIL_LOCK")) if not flg]) or "SNIPER_FILTER"
+                            if not (ok_ob and ok_k and reg_k != "CHOP" and ok_rt and ok_nash):
+                                why_rej = "+".join([nm for flg, nm in ((ok_ob, "OB_WALL"), (ok_k, "KNN"), (reg_k != "CHOP", "CHOP_SHIELD"), (ok_rt, "RED_TEAM"), (ok_nash, "NASH_TRAP"), (ok_tail, "TAIL_LOCK")) if not flg]) or "SNIPER_FILTER"
                                 nzt.record_rejected_hypothesis(h["symbol"], h["side"], h["entry"], h["stop"], why_rej)
-                                for flg, nm in ((ok_ob, "OB_WALL"), (ok_k, "KNN"), (reg_k != "CHOP", "CHOP_SHIELD"), (ok_ent, "ENTROPY"), (ok_rt, "RED_TEAM"), (ok_nash, "NASH_TRAP")):
+                                for flg, nm in ((ok_ob, "OB_WALL"), (ok_k, "KNN"), (reg_k != "CHOP", "CHOP_SHIELD"), (ok_rt, "RED_TEAM"), (ok_nash, "NASH_TRAP")):
                                     if not flg: r24.record_funnel_drop(nm)
-                            if ok_ob and ok_k and reg_k != "CHOP" and ok_ent and ok_rt and ok_nash and ok_tail and h["symbol"] not in sam.get_bitbase_blacklist() and sdm.check_sniper_quality(h["side"], btc_d, fetch_klines("BITGET", h["symbol"], "15m", 5))[0] and apm.validate_cfd_order(h["entry"], h["stop"], h["price"]) and h.get("win_prob", 0) >= 45:
+                            if ok_ob and ok_k and reg_k != "CHOP" and ok_rt and ok_nash and ok_tail and h["symbol"] not in sam.get_bitbase_blacklist() and sdm.check_sniper_quality(h["side"], btc_d, fetch_klines("BITGET", h["symbol"], "15m", 5))[0] and apm.validate_cfd_order(h["entry"], h["stop"], h["price"]) and h.get("win_prob", 0) >= 45:
                                 return h
                     except Exception: pass
                     return None
