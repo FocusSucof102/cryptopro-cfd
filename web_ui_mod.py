@@ -59,7 +59,7 @@ def register_web_ui(app, cp_mod, apm, atm, cam, wpr):
             net_r = round(sum(float(x.get("res_r", 0)) - 0.07 for x in closed), 2)
             wr = round(sum(1 for x in closed if float(x.get("res_r", 0)) > 0) / max(1, len(closed)) * 100.0, 1)
             labs[k_l] = {"total": len(arr), "closed": len(closed), "wr": wr, "net_r": net_r}
-        wd_data = json.load(open("module_heartbeats.json")) if os.path.exists("module_heartbeats.json") else {}
+        wd_data = {}
         return jsonify({"tuner": t_st, "btc": btc_lbl, "news": news, "labs": labs, "watchdog": wd_data, "sessions": sam.compute_session_edge()})
 
     @app.route("/api/web_audit_contract")
