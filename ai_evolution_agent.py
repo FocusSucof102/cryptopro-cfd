@@ -36,7 +36,7 @@ def run_evolution_cycle():
     h = "generativelanguage." + "googleapis." + "com"
     url = f"https://{h}/v1beta/models/gemini-3.8-flash:generateContent?key={API_KEY}"
     prompt = "Przeanalizuj tuner_state.json i zwroc krotka hipoteze zmian (JSON: hypothesis, changes, why): " + open("tuner_state.json").read()
-    resp = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=25).json()
+    resp = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=60).json()
     txt = resp.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", str(resp))
     entry = f"\n### [{ts}] KTO: Gemini-2.5-Flash | Egzamin: OOS={wfd.get('oos_net_r',0):+.2f}R MC={mcd.get('pass_pct',0):.0f}% ({'WDROZONO' if passed else 'ODRZUCONO'})\n{txt[:700]}\n"
     open("EVOLUTION_JOURNAL.md", "a", encoding="utf-8").write(entry)
