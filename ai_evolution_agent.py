@@ -40,7 +40,7 @@ def run_evolution_cycle():
     txt = resp.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", str(resp))
     entry = f"\n### [{ts}] KTO: Gemini-2.5-Flash | Egzamin: OOS={wfd.get('oos_net_r',0):+.2f}R MC={mcd.get('pass_pct',0):.0f}% ({'WDROZONO' if passed else 'ODRZUCONO'})\n{txt[:700]}\n"
     open("EVOLUTION_JOURNAL.md", "a", encoding="utf-8").write(entry)
-    os.system("git add EVOLUTION_JOURNAL.md && git commit -m \"AI Evolution: auto-badanie\" && git push origin main >/dev/null 2>&1")
+    os.system("git pull --rebase --autostash origin main >/dev/null 2>&1; git add -f smart_sl_mod.py crypto_pro.py tuner_state.json ai_evolution_agent.py EVOLUTION_JOURNAL.md && git commit -m \"AI Evolution: auto-badanie\" && git push origin main >/dev/null 2>&1")
     send_tg(f"🧬 <b>AI EWOLUCJA ({ts})</b>\nStatus: {'✅ WDROZONO' if passed else '🛡️ BRAK ZMIAN (odrzucono po testach)'}\nOOS: <code>{wfd.get('oos_net_r',0):+.2f}R</code> | MC: <code>{mcd.get('pass_pct',0):.0f}%</code>")
     print(entry)
 
