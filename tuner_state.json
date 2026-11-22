@@ -1,10 +1,12 @@
 {
-  "min_prob": 58,
+  "min_prob": 52,
+  "scan_floor": 45,
   "sl_mult": 1.0,
   "active_tiers": [
     "PLATINUM",
-    "GOLD"
+    "GOLD",
+    "SILVER"
   ],
-  "last_tune_ts": 1795193811.6597302,
-  "notes": "[20.11 16:00] Brak sygnalow 2h -> obnizono prog z 60% na 58%"
+  "last_tune_ts": 1795381131.9394271,
+  "notes": "[22.11] Odblokowano lejek + BE+0.35R + miekka waga Entropy (champion +46.8R)"
 }
