@@ -9,7 +9,7 @@ import future_quantum_mod as fqm
 import evolution_lab_mod as elm
 import ai_quant_mod as aqm
 import inst_orderflow_mod as iom
-STABLECOIN_BLACKLIST = {"BFUSD", "USDC", "USD1", "RLUSD", "FDUSD", "DAI", "TUSD", "USDE", "USDD", "PYUSD", "EURC"}
+STABLECOIN_BLACKLIST = {"BFUSD", "USDC", "USD1", "RLUSD", "FDUSD", "DAI", "TUSD", "USDE", "USDD", "PYUSD", "EURC", "U", "EUR", "GBP", "JPY", "USD1"}
 # ==============================================================================
 # [AI_GUARD_AND_CONTEXT] - OBOWIAZKOWE ZASADY DLA KAZDEGO AI CZYTAJACEGO TEN PLIK:
 # 1. OBOWIAZEK KONTEKSTU: Przed wprowadzeniem jakichkolwiek zmian w kodzie
