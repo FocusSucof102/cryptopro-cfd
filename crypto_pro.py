@@ -91,7 +91,7 @@ def get_bitbase_plan(hit, capital=None):
         hit.get("stop", 0),
         hit.get("side", ""),
         account_capital,
-        max_lev=1000,
+        max_lev=10,
         risk_pct=BITBASE_RISK_PCT,
         atr_value=hit.get("atr_value"),
     )
@@ -2213,7 +2213,7 @@ def tg_listener():
 
 def draw_box(title, col, rows):
     """Realizuje logike: draw box. Parametry: title, col, rows."""
-    cols = max(48, shutil.get_terminal_size((52, 24)).columns)
+    cols = min(56, max(48, shutil.get_terminal_size((52, 24)).columns))
     if cols >= 96:
         w_s = max(5, cols - 81)
         inn = w_s + 79
@@ -2279,7 +2279,7 @@ def draw_term():
     if not LATEST["near"]:
         print(f"{C}  Brak monet w strefie obserwacji (<= 1.5 ATR).{W}")
     else:
-        cols = max(48, shutil.get_terminal_size((52, 24)).columns)
+        cols = min(56, max(48, shutil.get_terminal_size((52, 24)).columns))
         av = max(30, cols - 1 - 17); ws = 6 + max(0, (av - 30)//4); wp = 8 + max(0, (av - 30)//4); wm = av - ws - wp
         inn = ws + 15 + wp + wm
         hdr = f"─ OBSERWOWANE / W POBLIZU ({len(LATEST['near'])}) "
