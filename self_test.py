@@ -94,7 +94,7 @@ def run_full_self_test():
     ]
     normal_limit = pf.check_directional_correlation("LONG", 1.5, correlation_positions)
     fast_btc_limit = pf.check_directional_correlation("LONG", -1.5001, correlation_positions)
-    if normal_limit["blocked"] or normal_limit["limit"] != 2:
+    if not normal_limit["blocked"] or normal_limit["limit"] != 2:
         raise RuntimeError("Niepoprawny limit korelacji przy zmianie BTC <= 1.5%")
     if not fast_btc_limit["blocked"] or fast_btc_limit["limit"] != 1:
         raise RuntimeError("Niepoprawny limit korelacji przy zmianie BTC > 1.5%")

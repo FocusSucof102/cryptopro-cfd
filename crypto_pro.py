@@ -200,7 +200,7 @@ def parse_user_override_levels(args, signal):
         raise ValueError("poziomy są niepoprawne dla kierunku sygnału")
     stop_pct = abs(values["entry"] - values["sl"]) / values["entry"] * 100.0
     atr_value = float(signal.get("atr_value", 0) or 0)
-    stop_atr = abs(values["entry"] - values["sl"]) / atr_value if atr_value > 0 else None
+    stop_atr = round(abs(values["entry"] - values["sl"]) / atr_value, 4) if atr_value > 0 else None
     rr = [round(abs(values[f"tp{index}"] - values["entry"]) / abs(values["entry"] - values["sl"]), 2) for index in range(1, 4)]
     values["side"] = side
     return values, rr, stop_pct, stop_atr
