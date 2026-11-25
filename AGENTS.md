@@ -11,3 +11,5 @@
    - `legacy_code/`: `collector.py`, `scanner.py`, `system.py`, `dashboard.py`, `backtest.py` (referencja/badania).
    - `legacy_docs/`: `MASTER_HANDOFF_AI.txt`, `AI_SESSION_STATE.md`, `EVOLUTION_JOURNAL.md` (scalone w PROJECT_MASTER).
 7. **Synchronizacja Git:** `git pull --rebase origin main` przed zadaniem; po PASS `smart_verify.py` → `git add`, `commit`, `push origin main`.
+n## 7. POLITYKA LIMITOW AI (OD 01.12.2026)n- Uzywaj lekkich modeli (Gemini Flash standard) i pracuj przyrostowo (1 modul na sesje).n- Tryby High/Sonnet uruchamiaj max 1x w tygodniu do przegladu calibration_summary.json.
+

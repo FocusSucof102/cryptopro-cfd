@@ -110,3 +110,4 @@ Wszystkie starsze skrypty oraz rozproszone pliki dokumentacji zostały bezpieczn
 - [x] Rozszerzenie Web UI o formularz konfiguracji ryzyka (`/api/save_risk`) i status Safe-Lock.
 - [x] Aktualizacja `smart_verify.py` o nowe moduły do pełnego wyniku PASS.
 - [ ] Dalsze zbieranie próbek `LIVE_FORWARD` w trybie ciągłym i cotygodniowy re-trening wag Meta-Brain.
+n## ROADMAPA OD 01.12.2026: SAMOUCZACA SIE PETLA PREDYKCJI (SELF-CALIBRATING ENGINE)n- CEL: Zamknieta petla Prognoza (forecast_ledger.json) -> Audyt Rzeczywistosci (Drift = Real_WR - Predicted_WR netto -0.07R) -> Bezpieczna Korekta Wag (EMA alpha=0.15, clamp +/-5%, min N>=20) w module self_learning_loop_mod.py (0 tokenow AI 24/7).n- ROZSZERZENIE Tydzien 2 (regime_predictor_mod.py): Funding Rate Bitget, szerokosc rynku TOP-100 Altcoin Breadth, kompresja ATR.n- KRYTERIUM AKCEPTACJI: walk_forward_mod.py (OOS > baza, Monte Carlo >= 85%) + python smart_verify.py.n
