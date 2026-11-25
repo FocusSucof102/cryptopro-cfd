@@ -2011,7 +2011,7 @@ def tg_listener():
                             if not rep:
                                 requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": "🏆 <b>SYMULACJA PRO #2 (1000$ | Plynne + Rezim BTC + Partial TP 1.5R)</b>\nKliknij przycisk ponizej, aby wystartowac ulepszona symulacje rownolegle do obecnej!", "parse_mode": "HTML", "reply_markup": kb_p})
                             else:
-                                t_pct = min(100, max(0, int(((24.0 - rep["rem_h"]) / 24.0) * 100)))
+                                t_pct = min(10, max(0, int(((24.0 - rep["rem_h"]) / 24.0) * 100)))
                                 t_bar = "█"*(t_pct//10) + "░"*(10 - t_pct//10)
                                 pos_idx = min(10, max(0, int(((rep["total_pnl"] + 50.0) / 150.0) * 10)))
                                 pnl_gauge = "📉 " + "".join("●" if k == pos_idx else "═" for k in range(11)) + " 📈"
@@ -2050,7 +2050,7 @@ def tg_listener():
                             if not rep:
                                 requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": "📊 <b>PODGLAD SYMULACJI 24H (1000$)</b>\nBrak aktywnej symulacji. Kliknij <b>🚀 Nowa Symulacja 24H</b>!", "parse_mode": "HTML", "reply_markup": kb_d})
                             else:
-                                t_pct = min(100, max(0, int(((24.0 - rep["rem_h"]) / 24.0) * 100)))
+                                t_pct = min(10, max(0, int(((24.0 - rep["rem_h"]) / 24.0) * 100)))
                                 t_bar = "█"*(t_pct//10) + "░"*(10 - t_pct//10)
                                 pos_idx = min(10, max(0, int(((rep["total_pnl"] + 50.0) / 150.0) * 10)))
                                 pnl_gauge = "📉 " + "".join("●" if k == pos_idx else "═" for k in range(11)) + " 📈"
