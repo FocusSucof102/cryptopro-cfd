@@ -55,7 +55,7 @@ from statistics import mean
 from flask import Flask, render_template_string, jsonify, redirect, url_for
 
 CONFIG_FILE, SETTINGS_FILE, CSV_FILE = "config_live.json", "scanner_settings.json", "signals_history.csv"
-TG_CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tg_config.json")
+TG_CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(globals().get("__file__", "crypto_pro.py"))), "tg_config.json")
 EXCHANGES = ["BINANCE", "BYBIT", "BITGET", "WEEX", "BITBASE"]
 EX_MAX_DEV = {"BINANCE": 5.0, "BYBIT": 5.0, "BITGET": 5.0, "WEEX": 3.0, "BITBASE": 4.0}
 MAX_LEV, MAX_MARGIN_FRACTION, FEE_SIDE_PCT, SLIPPAGE_BPS = 100, 0.80, 0.05, 2.0
@@ -1288,7 +1288,7 @@ def tg_menu(cid=None, tok=None, notice=""):
 def tg_listener():
     """Realizuje logike: tg listener."""
     global CFD_LIVE_ACTIVE, LIVE_ACTIVE
-    print(f"TG_LISTENER_START: script={os.path.abspath(__file__)} config={TG_CONFIG_FILE}", flush=True)
+    print(f"TG_LISTENER_START: script={os.path.abspath(globals().get("__file__", "crypto_pro.py"))} config={TG_CONFIG_FILE}", flush=True)
     if not os.path.exists(TG_CONFIG_FILE):
         print(f"TG_LISTENER_CONFIG_ERR: missing file: {TG_CONFIG_FILE}", flush=True)
         return

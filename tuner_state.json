@@ -1,18 +1,11 @@
 {
-  "min_prob": 52,
+  "min_prob": 58,
   "scan_floor": 45,
   "sl_mult": 1.0,
   "active_tiers": [
     "PLATINUM",
-    "GOLD",
-    "SILVER"
+    "GOLD"
   ],
-  "london_hours": [
-    8,
-    13
-  ],
-  "london_prob_boost": 10,
-  "london_ema200_1h_required": true,
-  "last_tune_ts": 1795381131.9394271,
-  "notes": "[24.11] Wdrozenie pakietu 24H: Filtr sesji londynskiej (+10 pkt & 1H EMA200), Safe-Lock 6% DD, STABLECOIN_BLACKLIST, Time-Decay Exit"
+  "last_tune_ts": 1795645928.723111,
+  "notes": "Skan 45-100% (4 poziomy) | Alerty od 58%"
 }

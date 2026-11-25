@@ -200,7 +200,7 @@ def run_full_self_test():
     g_msg = pf.check_new_opportunity_margin("LONG")
     if "min_prob" not in st or not isinstance(g_msg, str):
         raise RuntimeError("Blad Auto-Tunera lub Straznika Portfela")
-    tg_config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tg_config.json")
+    tg_config_path = os.path.join(os.path.dirname(os.path.abspath(globals().get("__file__", "self_test.py"))), "tg_config.json")
     if not os.path.exists(tg_config_path):
         raise RuntimeError("Brak pliku tg_config.json!")
 

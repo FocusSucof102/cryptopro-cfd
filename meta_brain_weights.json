@@ -1,0 +1,39 @@
+{
+  "OB_IMB": {
+    "w": 1.0,
+    "wins": 0,
+    "losses": 0,
+    "label": "Orderbook Imbalance"
+  },
+  "KNN": {
+    "w": 1.0,
+    "wins": 0,
+    "losses": 0,
+    "label": "KNN Pattern Matcher"
+  },
+  "LEAD_LAG": {
+    "w": 1.0,
+    "wins": 0,
+    "losses": 0,
+    "label": "Lead-Lag BTC/ETH/SOL"
+  },
+  "ENTROPY": {
+    "w": 1.0,
+    "wins": 0,
+    "losses": 0,
+    "label": "Niska Entropia Shannona"
+  },
+  "ICEBERG": {
+    "w": 1.0,
+    "wins": 0,
+    "losses": 0,
+    "label": "Whale Iceberg Absorption"
+  },
+  "QWAVE": {
+    "w": 1.0,
+    "wins": 0,
+    "losses": 0,
+    "label": "Quantum Wave Interference"
+  },
+  "last_learn": "2026-11-25 23:37"
+}
