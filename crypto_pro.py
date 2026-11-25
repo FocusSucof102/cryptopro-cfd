@@ -2212,14 +2212,14 @@ def tg_listener():
             time.sleep(2)
 
 def draw_box(title, col, rows):
-    """Realizuje logike: draw box. Parametry: title, col, rows."""
-    cols = min(56, max(48, shutil.get_terminal_size((52, 24)).columns))
+    """Realizuje logike: draw_box z rowna siatka prostokatnych komorek (53 znaki pion / 96+ poziom)."""
+    cols = shutil.get_terminal_size((54, 24)).columns
     if cols >= 96:
         w_s = max(5, cols - 81)
         inn = w_s + 79
-        hdr = f"─ {title} ({len(rows)}) "
+        hdr = f" {title} ({len(rows)}) "
         print(f"\n{col}{B}┌{hdr}{'─'*max(1, inn-len(hdr))}┐{W}")
-        print(f"{col}│{W}{'MONETA':<{w_s}}{col}│{W}{'KIER':<5}{col}│{W}{'STATUS':<6}{col}│{W}{'CENA':>7}{col}│{W}{'WEJSCIE':>7}{col}│{W}{'SL':>7}{col}│{W}{'TP.75R':>7}{col}│{W}{'TP1.5R':>7}{col}│{W}{'TP2.5R':>7}{col}│{W}{'KAP':>4}{col}│{W}{'LEV':>4}{col}│{W}{'MARG':>7}{col}│{W}")
+        print(f"{col}│{W}{'MONETA':<{w_s}}{col}│{W}{'KIER':<5}{col}│{W}{'STATUS':<6}{col}│{W}{'CENA':>7}{col}│{W}{'WEJSCIE':>7}{col}│{W}{'SL':>7}{col}│{W}{'TP0.75R':>7}{col}│{W}{'TP1.5R':>7}{col}│{W}{'TP2.5R':>7}{col}│{W}{'KAP':>4}{col}│{W}{'LEV':>4}{col}│{W}{'MARG':>7}{col}│{W}")
         print(f"{col}├{'─'*w_s}┼─────┼──────┼───────┼───────┼───────┼───────┼───────┼───────┼────┼────┼───────┤{W}")
         for h in rows:
             sym = h["symbol"].replace("USDT", "")[:w_s]
@@ -2232,38 +2232,43 @@ def draw_box(title, col, rows):
             targets.extend([h.get("entry", 0)] * (3 - len(targets)))
             t1, t2, t3 = [fmt_p(x).strip()[:7] for x in targets[:3]]
             lev = f"{plan['leverage']}x" if plan else "n/a"
-            margin = f"{plan['margin']:.1f}" if plan else "n/a"
-            print(f"{col}│{W}{B}{sym:<{w_s}}{W}{col}│{W}{kc}{h['side']:<5}{W}{col}│{W}{sc}{st:<6}{W}{col}│{W}{fmt_p(h['price']).strip()[:7]:>7}{col}│{W}{fmt_p(h['entry']).strip()[:7]:>7}{col}│{W}{fmt_p(h['stop']).strip()[:7]:>7}{col}│{W}{t1:>7}{col}│{W}{t2:>7}{col}│{W}{t3:>7}{col}│{W}{col}{h['req_cap']:>3}${W}{col}│{W}{lev:>4}{col}│{W}{margin:>7}{col}│{W}")
+            margin = f"${plan['margin']:.1f}" if plan else "n/a"
+            print(f"{col}│{W}{B}{sym:<{w_s}}{W}{col}│{kc}{h['side']:<5}{col}│{sc}{st:<6}{col}│{W}{fmt_p(h['price']).strip()[:7]:>7}{col}│{W}{fmt_p(h['entry']).strip()[:7]:>7}{col}│{W}{fmt_p(h['stop']).strip()[:7]:>7}{col}│{C}{t1:>7}{col}│{C}{t2:>7}{col}│{C}{t3:>7}{col}│{W}{h['req_cap']:>3}${col}│{W}{lev:>4}{col}│{W}{margin:>7}{col}│{W}")
         print(f"{col}└{'─'*w_s}┴─────┴──────┴───────┴───────┴───────┴───────┴───────┴───────┴────┴────┴───────┘{W}")
     else:
-        av = max(27, cols - 1 - 23)
-        w_s = 6 + max(0, (av - 27) // 4); rem = av - w_s; wp = rem // 3; we = rem // 3; wsl = rem - wp - we
-        inn = w_s + 21 + wp + we + wsl
-        hdr = f"─ {title} ({len(rows)}) "
-        print(f"\n{col}{B}┌{hdr}{'─'*max(1, inn-len(hdr))}┐{W}")
-        print(f"{col}│{W}{'MONETA':<{w_s}}{col}│{W}{'KIER':<5}{col}│{W}{'STATUS':<6}{col}│{W}{'CENA':>{wp}}{col}│{W}{'WEJSCIE':>{we}}{col}│{W}{'SL':>{wsl}}{col}│{W}{'KAP':>4}{col}│{W}")
-        print(f"{col}├{'─'*w_s}┼─────┼──────┼{'─'*wp}┼{'─'*we}┼{'─'*wsl}┼────┤{W}")
-        for idx, h in enumerate(rows):
-            sym = h["symbol"].replace("USDT", "")[:w_s]
+        cw = 12
+        bar_top = f"{col}┌{'─'*cw}┬{'─'*cw}┬{'─'*cw}┬{'─'*cw}┐{W}"
+        bar_mid = f"{col}├{'─'*cw}┼{'─'*cw}┼{'─'*cw}┼{'─'*cw}┤{W}"
+        bar_bot = f"{col}└{'─'*cw}┴{'─'*cw}┴{'─'*cw}┴{'─'*cw}┘{W}"
+        print(f"\n{col}{B}=== {title} ({len(rows)}) ==={W}")
+        for h in rows:
+            sym = h["symbol"].replace("USDT", "")[:cw].center(cw)
             kc = G if h["side"] == "LONG" else R
+            side_s = h["side"].center(cw)
             blocked = h.get("correlation_guard") == "CORRELATION_GUARD"
             sc = R if blocked or not h.get("price_ok", True) or h.get("win_prob", 0) < 60 else (Y if h.get("is_trig") or h.get("win_prob", 0) < 75 else G)
-            st = "CORR!" if blocked else ("TRIGG." if h["is_trig"] else ("DALEKO" if not h.get("price_ok", True) else "GOTOWY"))
-            print(f"{col}│{W}{B}{sym:<{w_s}}{W}{col}│{W}{kc}{h['side']:<5}{W}{col}│{W}{sc}{st:<6}{W}{col}│{W}{fmt_p(h['price']).strip()[:wp]:>{wp}}{col}│{W}{fmt_p(h['entry']).strip()[:we]:>{we}}{col}│{W}{fmt_p(h['stop']).strip()[:wsl]:>{wsl}}{col}│{W}{col}{h['req_cap']:>3}${W}{col}│{W}")
+            st_raw = "CORR!" if blocked else ("TRIGG." if h["is_trig"] else ("DALEKO" if not h.get("price_ok", True) else "GOTOWY"))
+            st_s = st_raw.center(cw)
             plan = get_bitbase_plan(h)
-            target_values = plan["targets"] if plan else h.get("tp", [])[:3]
-            target_values.extend([h.get("entry", 0)] * (3 - len(target_values)))
-            labels = ("0.75R", "1.5R", "2.5R")
-            tps = [fmt_p(value).strip() for value in target_values[:3]]
-            bw, rw = (inn - 4) // 3, (inn - 4) % 3
-            cw = [bw + (1 if j < rw else 0) for j in range(3)]
-            print(f"{col}├" + "┼".join(f"{'─'*((cw[j]-len(labels[j]))//2)}{C}{labels[j]}{col}{'─'*(cw[j]-len(labels[j])-(cw[j]-len(labels[j]))//2)}" for j in range(3)) + f"┤{W}")
-            print(f"{col}│" + f"{col}│".join(f"{W}{C}{tps[j][:cw[j]]:^{cw[j]}}{W}" for j in range(3)) + f"{col}│{W}")
-            if plan:
-                plan_line = f"LEV {plan['leverage']}x | MARG ${plan['margin']:.2f} | Ryzyko ${plan['risk_usdt']:.2f}"
-                print(f"{col}│{W}{plan_line:<{inn}}{col}│{W}")
-            if idx < len(rows) - 1: print(f"{col}├{'─'*w_s}┼─────┼──────┼{'─'*wp}┼{'─'*we}┼{'─'*wsl}┼────┤{W}")
-        print(f"{col}└{'─'*w_s}┴─────┴──────┴{'─'*wp}┴{'─'*we}┴{'─'*wsl}┴────┘{W}")
+            lev_str = f"{plan['leverage']}x" if plan else "10x"
+            kap_lev = f"{h['req_cap']}$ | {lev_str}"[:cw].center(cw)
+            p_cur = fmt_p(h["price"]).strip()[:cw].center(cw)
+            p_ent = fmt_p(h["entry"]).strip()[:cw].center(cw)
+            p_sl = fmt_p(h["stop"]).strip()[:cw].center(cw)
+            risk_s = (f"${plan['risk_usdt']:.2f}" if plan else "$2.00")[:cw].center(cw)
+            marg_s = (f"${plan['margin']:.2f}" if plan else "n/a")[:cw].center(cw)
+            targets = list(plan["targets"]) if plan else list(h.get("tp", [])[:3])
+            targets.extend([h.get("entry", 0)] * (3 - len(targets)))
+            t1, t2, t3 = [fmt_p(x).strip()[:cw].center(cw) for x in targets[:3]]
+            print(bar_top)
+            print(f"{col}│{W}{B}{sym}{W}{col}│{kc}{side_s}{col}│{sc}{st_s}{col}│{W}{kap_lev}{col}│{W}")
+            print(bar_mid)
+            print(f"{col}│{W}{'CENA'.center(cw)}{col}│{W}{'WEJSCIE'.center(cw)}{col}│{W}{'SL'.center(cw)}{col}│{W}{'RYZYKO'.center(cw)}{col}│{W}")
+            print(f"{col}│{W}{p_cur}{col}│{W}{p_ent}{col}│{W}{p_sl}{col}│{Y}{risk_s}{col}│{W}")
+            print(bar_mid)
+            print(f"{col}│{W}{'TP 0.75R'.center(cw)}{col}│{W}{'TP 1.5R'.center(cw)}{col}│{W}{'TP 2.5R'.center(cw)}{col}│{W}{'MARGIN'.center(cw)}{col}│{W}")
+            print(f"{col}│{C}{t1}{col}│{C}{t2}{col}│{C}{t3}{col}│{W}{marg_s}{col}│{W}")
+            print(bar_bot)
 
 def draw_term():
     """Realizuje logike: draw term."""
