@@ -3,5 +3,15 @@
     "ts": "2026-11-25 23:43:26",
     "status": "PASS",
     "summary": "QA 5.0 PRO+ | Docs:200 | 829333MB | 9/9 ETAPOW OK | Pule: 52/80/100 | Tuner: 58% | Baza: 90 HIST + 0 LIVE"
+  },
+  {
+    "ts": "2026-11-26 00:03:14",
+    "status": "PASS",
+    "summary": "QA 5.0 PRO+ | Docs:200 | 829333MB | 9/9 ETAPOW OK | Pule: 52/80/100 | Tuner: 58% | Baza: 90 HIST + 0 LIVE"
+  },
+  {
+    "ts": "2026-11-26 00:06:08",
+    "status": "PASS",
+    "summary": "QA 5.0 PRO+ | Docs:200 | 829321MB | 9/9 ETAPOW OK | Pule: 52/80/100 | Tuner: 58% | Baza: 90 HIST + 0 LIVE"
   }
 ]
