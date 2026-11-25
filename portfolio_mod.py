@@ -18,12 +18,292 @@ import evolution_lab_mod as elm
 # 4. NIE PRZYWRACAC: Zablokowanych API (BINANCE/BYBIT), 500 niszowych mikrotokentow
 #    ani twardej blokady tylko jednego kierunku handlu.
 # ==============================================================================
-import os, json, time
-from datetime import datetime
+import os, json, math, time, threading
+from datetime import datetime, date, time as datetime_time, timedelta, timezone
 import crypto_pro as cp
 import smart_sl_mod as ssl
 
 POS_FILE = "active_positions.json"
+DAILY_GUARD_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "daily_guard.json")
+DAILY_GUARD_LOCK = threading.RLock()
+DAILY_NOTICE_IN_PROGRESS = False
+
+def warsaw_now():
+    """Returns the current Europe/Warsaw wall time using EU daylight-saving rules."""
+    utc_now = datetime.now(timezone.utc)
+    march_end = date(utc_now.year, 3, 31)
+    october_end = date(utc_now.year, 10, 31)
+    dst_start_day = march_end - timedelta(days=(march_end.weekday() + 1) % 7)
+    dst_end_day = october_end - timedelta(days=(october_end.weekday() + 1) % 7)
+    dst_start = datetime.combine(dst_start_day, datetime_time(1), timezone.utc)
+    dst_end = datetime.combine(dst_end_day, datetime_time(1), timezone.utc)
+    utc_offset = 2 if dst_start <= utc_now < dst_end else 1
+    return utc_now.astimezone(timezone(timedelta(hours=utc_offset), "Europe/Warsaw"))
+
+def _new_daily_guard_state(today=None):
+    """Builds a fresh daily guard state using the configured opening capital."""
+    current_day = today or warsaw_now().date().isoformat()
+    capital = float(cp.load_settings().get("capital", 200.0))
+    if not math.isfinite(capital) or capital <= 0:
+        capital = 200.0
+    return {
+        "date": current_day,
+        "base_capital": round(capital, 2),
+        "realized_pnl_usdt": 0.0,
+        "consecutive_sl": 0,
+        "locked": False,
+        "lock_until_date": None,
+        "lock_reason": "",
+        "lock_notified": False,
+        "closed_trades": [],
+    }
+
+def _load_daily_guard_unlocked():
+    """Loads or rolls over the Warsaw-day guard state; caller holds its lock."""
+    today = warsaw_now().date().isoformat()
+    if os.path.exists(DAILY_GUARD_FILE):
+        with open(DAILY_GUARD_FILE, "r", encoding="utf-8") as state_file:
+            state = json.load(state_file)
+        if not isinstance(state, dict):
+            raise ValueError("daily_guard.json must contain a JSON object")
+    else:
+        state = _new_daily_guard_state(today)
+    if state.get("date") != today:
+        state = _new_daily_guard_state(today)
+        save_daily_guard(state)
+    else:
+        defaults = _new_daily_guard_state(today)
+        for key, value in defaults.items():
+            state.setdefault(key, value)
+    if not isinstance(state.get("closed_trades"), list):
+        raise ValueError("daily_guard.json closed_trades must be a JSON array")
+    return state
+
+def save_daily_guard(state):
+    """Persists the daily guard atomically to the ignored local state file."""
+    temp_path = DAILY_GUARD_FILE + ".tmp"
+    with open(temp_path, "w", encoding="utf-8") as state_file:
+        json.dump(state, state_file, indent=2)
+    os.replace(temp_path, DAILY_GUARD_FILE)
+
+def get_daily_guard_status():
+    """Returns the Warsaw-day PnL, stop-loss streak, and current lock status."""
+    with DAILY_GUARD_LOCK:
+        state = _load_daily_guard_unlocked()
+        save_daily_guard(state)
+    base_capital = float(state.get("base_capital", 200.0) or 200.0)
+    realized_pnl = float(state.get("realized_pnl_usdt", 0.0) or 0.0)
+    locked = bool(state.get("locked"))
+    lock_until = state.get("lock_until_date")
+    status_text = (
+        f"🔴 DAILY_LOCK AKTYWNY do {lock_until} 00:00 (Europe/Warsaw)"
+        if locked else "🟢 DAILY_LOCK: OFF"
+    )
+    return {
+        "locked": locked,
+        "date": state.get("date", ""),
+        "lock_until_date": lock_until,
+        "lock_reason": state.get("lock_reason", ""),
+        "base_capital": base_capital,
+        "realized_pnl_usdt": round(realized_pnl, 2),
+        "loss_pct": round(max(0.0, -realized_pnl) / base_capital * 100.0, 2) if base_capital > 0 else 0.0,
+        "consecutive_sl": int(state.get("consecutive_sl", 0)),
+        "status_text": status_text,
+    }
+
+def unlock_daily_guard():
+    """Manually clears DAILY_LOCK after the Telegram confirmation action."""
+    with DAILY_GUARD_LOCK:
+        state = _load_daily_guard_unlocked()
+        if not state.get("locked"):
+            return False
+        state.update({
+            "locked": False,
+            "lock_until_date": None,
+            "lock_reason": "manual_unlock",
+            "lock_notified": True,
+            "manually_unlocked_at": warsaw_now().isoformat(),
+        })
+        save_daily_guard(state)
+    return True
+
+def record_closed_position(position, close_price=None, close_reason=None):
+    """Records the net close result for an OBSTAWIONE position and may activate DAILY_LOCK."""
+    if not isinstance(position, dict) or position.get("tracked_as") != "OBSTAWIONE":
+        return {"recorded": False, "lock_activated": False, "pnl_usdt": None}
+
+    entry = float(position.get("entry", 0.0) or 0.0)
+    qty = float(position.get("qty", 0.0) or 0.0)
+    risk = float(position.get("risk", 0.0) or 0.0)
+    side = str(position.get("side", "")).upper()
+    if (
+        side not in ("LONG", "SHORT")
+        or entry <= 0
+        or qty < 0
+        or risk < 0
+        or not all(math.isfinite(value) for value in (entry, qty, risk))
+    ):
+        raise ValueError("Cannot record closed position with invalid side, entry, quantity, or risk")
+
+    resolved_price = None
+    if close_price is not None:
+        candidate_price = float(close_price)
+        if math.isfinite(candidate_price) and candidate_price > 0:
+            resolved_price = candidate_price
+    if resolved_price is None:
+        saved_price = position.get("live_price")
+        if saved_price is not None:
+            candidate_price = float(saved_price)
+            if math.isfinite(candidate_price) and candidate_price > 0:
+                resolved_price = candidate_price
+
+    hit_tps = position.get("hit_tps", [])
+    tp_weights = position.get("tp_weights", [])
+    tp_r = position.get("tp_r", [])
+    realized_tp_pnl = position.get("realized_pnl_usdt")
+    if realized_tp_pnl is None:
+        realized_tp_pnl = sum(
+            risk * float(tp_weights[index]) * float(tp_r[index])
+            for index, was_hit in enumerate(hit_tps)
+            if was_hit and index < len(tp_weights) and index < len(tp_r)
+        )
+    realized_tp_pnl = float(realized_tp_pnl or 0.0)
+    remaining_weight = max(
+        0.0,
+        1.0 - sum(float(tp_weights[index]) for index, was_hit in enumerate(hit_tps)
+                  if was_hit and index < len(tp_weights)),
+    )
+    remaining_pnl = None
+    net_pnl = None
+    resolved_reason = str(close_reason or "").upper()
+    if resolved_price is not None:
+        direction = 1 if side == "LONG" else -1
+        remaining_pnl = (resolved_price - entry) * direction * qty * remaining_weight
+        net_pnl = round(realized_tp_pnl + remaining_pnl - risk * 0.07, 4)
+        stop = float(position.get("stop", entry) or entry)
+        hit_stop = resolved_price <= stop if side == "LONG" else resolved_price >= stop
+        if not resolved_reason:
+            resolved_reason = "SL" if hit_stop else "MANUAL"
+    else:
+        resolved_reason = resolved_reason or "UNKNOWN"
+        print(f"DAILY_GUARD_CLOSE_UNPRICED: {position.get('id', position.get('symbol', 'unknown'))}", flush=True)
+
+    lock_activated = False
+    with DAILY_GUARD_LOCK:
+        state = _load_daily_guard_unlocked()
+        trade_id = str(position.get("id", ""))
+        if trade_id and any(
+            isinstance(item, dict) and item.get("id") == trade_id
+            for item in state.get("closed_trades", [])
+        ):
+            return {"recorded": False, "lock_activated": False, "pnl_usdt": None, "duplicate": True}
+        if net_pnl is not None:
+            state["realized_pnl_usdt"] = round(float(state.get("realized_pnl_usdt", 0.0)) + net_pnl, 4)
+        if resolved_reason == "SL":
+            state["consecutive_sl"] = int(state.get("consecutive_sl", 0)) + 1
+        else:
+            state["consecutive_sl"] = 0
+        state.setdefault("closed_trades", []).append({
+            "id": trade_id,
+            "symbol": str(position.get("symbol", "")),
+            "side": side,
+            "closed_at": warsaw_now().isoformat(),
+            "close_reason": resolved_reason,
+            "close_price": resolved_price,
+            "pnl_usdt": net_pnl,
+        })
+        state["closed_trades"] = state["closed_trades"][-200:]
+        base_capital = float(state.get("base_capital", 200.0) or 200.0)
+        daily_loss = max(0.0, -float(state.get("realized_pnl_usdt", 0.0)))
+        threshold_reached = base_capital > 0 and daily_loss >= base_capital * 0.035
+        streak_reached = int(state["consecutive_sl"]) >= 2
+        if not state.get("locked") and (threshold_reached or streak_reached):
+            tomorrow = warsaw_now().date() + timedelta(days=1)
+            state.update({
+                "locked": True,
+                "lock_until_date": tomorrow.isoformat(),
+                "lock_reason": "consecutive_sl" if streak_reached else "daily_loss",
+                "lock_notified": False,
+            })
+            lock_activated = True
+        save_daily_guard(state)
+
+    return {
+        "recorded": True,
+        "lock_activated": lock_activated,
+        "pnl_usdt": net_pnl,
+        "capital_adjustment": None if remaining_pnl is None else round(remaining_pnl - risk * 0.07, 4),
+        "close_reason": resolved_reason,
+    }
+
+def get_btc_1h_change_pct():
+    """Returns BTC's latest one-hour close change from Bitget, or None if unavailable."""
+    candles = cp.fetch_klines("BITGET", "BTCUSDT", "1h", 2)
+    if not candles or len(candles.get("c", [])) < 2:
+        return None
+    previous_close = float(candles["c"][-2])
+    latest_close = float(candles["c"][-1])
+    if previous_close <= 0 or not math.isfinite(previous_close) or not math.isfinite(latest_close):
+        return None
+    return round((latest_close - previous_close) / previous_close * 100.0, 4)
+
+def check_directional_correlation(new_side, btc_1h_change_pct=None, positions=None):
+    """Checks the OBSTAWIONE same-direction cap, tightened during BTC 1h moves above 1.5%."""
+    side = str(new_side).upper()
+    if side not in ("LONG", "SHORT"):
+        raise ValueError("Direction must be LONG or SHORT")
+    open_positions = load_positions() if positions is None else positions
+    btc_change = None if btc_1h_change_pct is None else float(btc_1h_change_pct)
+    if btc_change is not None and not math.isfinite(btc_change):
+        btc_change = None
+    limit = 1 if btc_change is None or abs(btc_change) > 1.5 else 2
+    same_direction = sum(
+        1 for position in open_positions
+        if isinstance(position, dict)
+        and position.get("tracked_as") == "OBSTAWIONE"
+        and str(position.get("side", "")).upper() == side
+    )
+    return {
+        "blocked": same_direction >= limit,
+        "reason": "CORRELATION_GUARD" if same_direction >= limit else "",
+        "same_direction": same_direction,
+        "limit": limit,
+        "btc_1h_change_pct": btc_change,
+    }
+
+def _send_daily_lock_notice():
+    """Sends the single DAILY_LOCK alert with a callback that requests confirmation."""
+    global DAILY_NOTICE_IN_PROGRESS
+    with DAILY_GUARD_LOCK:
+        state = _load_daily_guard_unlocked()
+        if not state.get("locked") or state.get("lock_notified") or DAILY_NOTICE_IN_PROGRESS:
+            return False
+        DAILY_NOTICE_IN_PROGRESS = True
+        notice_date = state.get("date")
+    keyboard = {"inline_keyboard": [[
+        {"text": "🔓 Odblokuj (potwierdź)", "callback_data": "unlock_request"}
+    ]]}
+    sent = False
+    try:
+        sent = bool(cp.send_telegram("🔴 DAILY DRAWDOWN LOCK AKTYWNY", keyboard))
+    except Exception as err:
+        print(f"DAILY_GUARD_NOTIFY_ERR: {err}", flush=True)
+    with DAILY_GUARD_LOCK:
+        DAILY_NOTICE_IN_PROGRESS = False
+        state = _load_daily_guard_unlocked()
+        if sent and state.get("date") == notice_date and state.get("locked"):
+            state["lock_notified"] = True
+        save_daily_guard(state)
+    if not sent:
+        print("DAILY_GUARD_NOTIFY_PENDING: Telegram send was not confirmed", flush=True)
+    return sent
+
+def send_pending_daily_lock_notice():
+    """Retries the one-time DAILY_LOCK notice when a prior Telegram send failed."""
+    status = get_daily_guard_status()
+    if not status["locked"]:
+        return False
+    return _send_daily_lock_notice()
 
 def load_positions():
     """Realizuje logike: load positions."""
@@ -39,9 +319,25 @@ def save_positions(lst):
     """Realizuje logike: save positions. Parametry: lst."""
     json.dump(lst, open(POS_FILE, "w"), indent=2)
 
-def add_position(ex, sym, side, entry, stop, tp_list, qty, margin, risk_usdt, lev, tracked_as="OBSTAWIONE"):
+def add_position(ex, sym, side, entry, stop, tp_list, qty, margin, risk_usdt, lev, tracked_as="OBSTAWIONE", btc_1h_change_pct=None):
     """Adds a tracked position with optional OBSTAWIONE state and target weights."""
     lst = load_positions()
+    if tracked_as == "OBSTAWIONE":
+        daily_status = get_daily_guard_status()
+        if daily_status["locked"]:
+            raise ValueError("DAILY_LOCK: nowe pozycje są zablokowane do północy Europe/Warsaw")
+        btc_change = btc_1h_change_pct
+        if btc_change is None:
+            try:
+                btc_change = get_btc_1h_change_pct()
+            except Exception as err:
+                print(f"CORRELATION_GUARD_BTC_ERR: {err}", flush=True)
+        correlation = check_directional_correlation(side, btc_change, lst)
+        if correlation["blocked"]:
+            raise ValueError(
+                f"CORRELATION_GUARD: {correlation['same_direction']}/{correlation['limit']} "
+                f"otwarte pozycje {str(side).upper()}"
+            )
     pid = f"{sym}_{int(time.time())}"
     tp_count = len(tp_list)
     if tp_count == 3:
@@ -54,6 +350,7 @@ def add_position(ex, sym, side, entry, stop, tp_list, qty, margin, risk_usdt, le
         "entry": round(float(entry), 6), "stop": round(float(stop), 6),
         "tp": [round(float(x), 6) for x in tp_list],
         "tp_r": tp_r, "tp_weights": tp_weights, "tracked_as": tracked_as,
+        "realized_pnl_usdt": 0.0,
         "qty": float(qty), "margin": round(float(margin), 2),
         "risk": round(float(risk_usdt), 2), "lev": int(lev),
         "hit_tps": [False] * tp_count
@@ -74,16 +371,42 @@ def toggle_tp_hit(pid, tp_idx):
             pnl_part = round(p["risk"] * weights[tp_idx] * multiples[tp_idx], 2)
             if not was_hit:
                 cfg["capital"] = round(cfg["capital"] + pnl_part, 2)
+                p["realized_pnl_usdt"] = round(float(p.get("realized_pnl_usdt", 0.0)) + pnl_part, 4)
             else:
                 cfg["capital"] = round(cfg["capital"] - pnl_part, 2)
+                p["realized_pnl_usdt"] = round(float(p.get("realized_pnl_usdt", 0.0)) - pnl_part, 4)
             cp.save_settings(cfg)
             break
     save_positions(lst)
 
-def close_position(pid):
-    """Realizuje logike: close position. Parametry: pid."""
-    lst = [p for p in load_positions() if p["id"] != pid]
-    save_positions(lst)
+def close_position(pid, close_price=None, close_reason=None):
+    """Closes a tracked position, books its net result, and activates DAILY_LOCK when required."""
+    positions = load_positions()
+    position = next((item for item in positions if str(item.get("id")) == str(pid)), None)
+    if position is None:
+        return None
+
+    if close_price is None and position.get("live_price") is None:
+        try:
+            candles = cp.fetch_klines("BITGET", position.get("symbol", ""), "15m", 2)
+            if candles and candles.get("c"):
+                close_price = float(candles["c"][-1])
+        except Exception as err:
+            print(f"DAILY_GUARD_PRICE_ERR: {position.get('symbol', '')}: {err}", flush=True)
+
+    close_info = record_closed_position(position, close_price, close_reason)
+    if close_info.get("capital_adjustment") is not None:
+        settings = cp.load_settings()
+        settings["capital"] = round(
+            max(0.0, float(settings.get("capital", 200.0)) + close_info["capital_adjustment"]),
+            2,
+        )
+        cp.save_settings(settings)
+
+    save_positions([item for item in positions if str(item.get("id")) != str(pid)])
+    if close_info.get("lock_activated"):
+        _send_daily_lock_notice()
+    return close_info
 
 def get_portfolio_summary():
     """Realizuje logike: get portfolio summary."""

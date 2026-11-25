@@ -1,4 +1,6 @@
 *.json
+daily_guard.json
+daily_guard.json.tmp
 !cfd_live_history.json
 !market_shadow_lab.json
 !tuner_state.json

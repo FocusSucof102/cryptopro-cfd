@@ -8,7 +8,7 @@
 #    NATYCHMIAST ostrzez uzytkownika na samym poczatku odpowiedzi: podaj GDZIE i CO
 #    wycieklo oraz zlec natychmiastowa zmiane/uniewaznienie klucza!
 # 3. ARCHITEKTURA I GIELDY:
-#    - Zrodlo danych/API skanera: wylacznie BITGET USDT-FUTURES (TOP-60 >10M$).
+#    - Zrodlo danych/API skanera: wylacznie BITGET USDT-FUTURES (co najmniej 15M USDT/24h).
 #    - Platforma gry uzytkownika: BITBASE FUTURES / CFD (uwzgledniac przy prowizjach,
 #      dostepnosci par, dźwigni i minimalnych odleglosciach zlecen!).
 #    - Silnik: Smart Dual-Mode (LONG+SHORT), Auto-Tuner, Audytor 1M (MFE/MAE),
@@ -17,7 +17,7 @@
 # 4. NIE PRZYWRACAC: Zablokowanych API (BINANCE/BYBIT), 500 niszowych mikrotokentow
 #    ani twardej blokady tylko jednego kierunku handlu.
 # ==============================================================================
-import time, requests
+import time, requests, math
 from datetime import datetime, timezone
 
 SESS = requests.Session()
@@ -146,13 +146,47 @@ def detect_ttm_squeeze(kl):
     return 0
 
 CACHE_TOP60 = {"ts": 0, "syms": []}
+MIN_LIQUIDITY_24H_USDT = 15000000.0
+
+def is_liquid_24h_volume(volume_usdt):
+    """Returns whether a futures pair meets the fixed 15M USDT 24h turnover floor."""
+    try:
+        volume = float(volume_usdt)
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(volume) and volume >= MIN_LIQUIDITY_24H_USDT
+
+def get_upcoming_funding_warning(side, funding_pct, now_utc=None):
+    """Warns when adverse funding above 0.05% settles in under 30 minutes."""
+    direction = str(side).upper()
+    if direction not in ("LONG", "SHORT"):
+        raise ValueError("Direction must be LONG or SHORT")
+    rate = float(funding_pct)
+    if direction == "LONG" and rate <= 0.05:
+        return ""
+    if direction == "SHORT" and rate >= -0.05:
+        return ""
+    current_time = now_utc or datetime.now(timezone.utc)
+    if current_time.tzinfo is None:
+        raise ValueError("now_utc must be timezone-aware")
+    current_time = current_time.astimezone(timezone.utc)
+    seconds_today = current_time.hour * 3600 + current_time.minute * 60 + current_time.second
+    seconds_to_funding = 8 * 3600 - (seconds_today % (8 * 3600))
+    if seconds_to_funding >= 30 * 60:
+        return ""
+    minutes = max(1, int(seconds_to_funding // 60))
+    next_seconds = seconds_today + seconds_to_funding
+    funding_hour = (next_seconds // 3600) % 24
+    return (
+        f"⚠️ WYSOKI FUNDING: {rate:+.3f}% — naliczenie za {minutes} min "
+        f"({funding_hour:02d}:00 UTC), niekorzystne dla {direction}."
+    )
 
 def get_cfd_top60_symbols():
-    """Pobiera TOP-60 najplynniejszych par USDT-Futures (>10M$)."""
+    """Fetches Bitget USDT futures pairs with at least 15M USDT of 24h turnover."""
     now = time.time()
-    if CACHE_TOP60["syms"] and now - CACHE_TOP60["ts"] < 1800:
+    if CACHE_TOP60["syms"] and now - CACHE_TOP60["ts"] < 300:
         return CACHE_TOP60["syms"]
-    fallback = ["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT","BNBUSDT","DOGEUSDT","ADAUSDT","TRXUSDT","AVAXUSDT","LINKUSDT","DOTUSDT","LTCUSDT","BCHUSDT","NEARUSDT","INJUSDT","APTUSDT","UNIUSDT","ATOMUSDT","FILUSDT","SUIUSDT","TONUSDT","OPUSDT","ARBUSDT","SEIUSDT","TIAUSDT","RENDERUSDT","FETUSDT","AAVEUSDT","RUNEUSDT","LDOUSDT","GRTUSDT","IMXUSDT","STXUSDT","ICPUSDT","ALGOUSDT","PEPEUSDT","WIFUSDT","ENAUSDT","ONDOUSDT","TAOUSDT","WLDUSDT","JUPUSDT","PYTHUSDT","PENDLEUSDT","STRKUSDT","EIGENUSDT","ZKUSDT","NOTUSDT","GALAUSDT","SANDUSDT","MANAUSDT","CRVUSDT","MKRUSDT","SNXUSDT","COMPUSDT","DYDXUSDT","ENSUSDT","CHZUSDT","AXSUSDT","EGLDUSDT"]
     try:
         sl = chr(47)
         u = "".join(["https:", sl, sl, "api.", "bitget", ".com", sl, "api", sl, "v2", sl, "mix", sl, "market", sl, "tickers"])
@@ -164,16 +198,18 @@ def get_cfd_top60_symbols():
             if base in STABLECOIN_BLACKLIST or any(sb == base for sb in STABLECOIN_BLACKLIST):
                 continue
             vol_u = float(it.get("usdtVolume", 0) or 0)
-            if sym.endswith("USDT") and vol_u >= 3000000:
+            if sym.endswith("USDT") and is_liquid_24h_volume(vol_u):
                 rows.append((sym, vol_u))
         rows.sort(key=lambda x: -x.__getitem__(1))
-        if len(rows) >= 25:
-            syms = [x.__getitem__(0) for x in rows.__getitem__(slice(0, 100)) if not any(x.__getitem__(0).startswith(sb) for sb in STABLECOIN_BLACKLIST)]
-            CACHE_TOP60.update({"ts": now, "syms": syms})
-            return syms
-    except Exception:
-        pass
-    return fallback
+        if len(rows) < 25:
+            print(f"BITGET_LIQUIDITY_FILTER: only {len(rows)} pairs meet 15M USDT/24h", flush=True)
+            return []
+        syms = [x.__getitem__(0) for x in rows.__getitem__(slice(0, 100)) if not any(x.__getitem__(0).startswith(sb) for sb in STABLECOIN_BLACKLIST)]
+        CACHE_TOP60.update({"ts": now, "syms": syms})
+        return syms
+    except Exception as err:
+        print(f"BITGET_LIQUIDITY_FILTER_ERR: {err}", flush=True)
+        return []
 
 def validate_cfd_order(entry, stop, cur_price):
     """Waliduje dystans zlecenia i SL (0.35%-6.5%) pod wymogi CFD. Parametry: entry, stop, cur_price."""

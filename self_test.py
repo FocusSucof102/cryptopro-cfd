@@ -1,4 +1,6 @@
-import os, json, re, sys, py_compile
+import os, json, re, sys, py_compile, tempfile
+from datetime import datetime, timezone, timedelta
+from unittest import mock
 
 def run_full_self_test():
     # 1. Skladnia wszystkich plikow .py
@@ -60,6 +62,106 @@ def run_full_self_test():
     }, pattern_rows)
     if pattern_summary != "WR 100% (5/5 podobnych)":
         raise RuntimeError(f"Blad Pattern Matchera: {pattern_summary}")
+    if apm.is_liquid_24h_volume(14999999) or not apm.is_liquid_24h_volume(15000000):
+        raise RuntimeError("Blad progu plynnosci 24h 15M USDT")
+    if apm.is_liquid_24h_volume(float("inf")):
+        raise RuntimeError("Filtr plynnosci powinien odrzucic niefinitywny obrot")
+    bitget_contracts = {
+        "data": [{
+            "symbol": "TESTUSDT", "symbolStatus": "normal",
+            "sizeMultiplier": "0.001", "minTradeNum": "0.001", "minTradeUSDT": "5",
+        }],
+    }
+    bitget_tickers = {
+        "data": [{"symbol": "TESTUSDT", "usdtVolume": "15000000", "lastPr": "1.0"}],
+    }
+    with mock.patch.object(cp, "get_json", side_effect=[bitget_contracts, bitget_tickers]):
+        bitget_symbols, _, bitget_prices = cp.get_market_meta("BITGET", 10)
+    if bitget_symbols != ["TESTUSDT"] or bitget_prices.get("TESTUSDT") != 1.0:
+        raise RuntimeError("Filtr Bitget nie odczytal pola usdtVolume")
+    funding_time = datetime(2026, 11, 25, 7, 40, tzinfo=timezone.utc)
+    if "WYSOKI FUNDING" not in apm.get_upcoming_funding_warning("LONG", 0.051, funding_time):
+        raise RuntimeError("Brak ostrzezenia dla niekorzystnego funding 20 min przed rozliczeniem")
+    if apm.get_upcoming_funding_warning("LONG", 0.051, datetime(2026, 11, 25, 7, 30, tzinfo=timezone.utc)):
+        raise RuntimeError("Funding powinien byc bez ostrzezenia przy granicy 30 min")
+    if not apm.get_upcoming_funding_warning("SHORT", -0.051, datetime(2026, 11, 25, 15, 45, tzinfo=timezone.utc)):
+        raise RuntimeError("Brak ostrzezenia dla funding niekorzystnego dla SHORT")
+
+    correlation_positions = [
+        {"tracked_as": "OBSTAWIONE", "side": "LONG"},
+        {"tracked_as": "OBSTAWIONE", "side": "LONG"},
+        {"tracked_as": "NIEOBSTAWIONE", "side": "LONG"},
+    ]
+    normal_limit = pf.check_directional_correlation("LONG", 1.5, correlation_positions)
+    fast_btc_limit = pf.check_directional_correlation("LONG", -1.5001, correlation_positions)
+    if normal_limit["blocked"] or normal_limit["limit"] != 2:
+        raise RuntimeError("Niepoprawny limit korelacji przy zmianie BTC <= 1.5%")
+    if not fast_btc_limit["blocked"] or fast_btc_limit["limit"] != 1:
+        raise RuntimeError("Niepoprawny limit korelacji przy zmianie BTC > 1.5%")
+    with mock.patch.object(pf.cp, "fetch_klines", return_value={"c": [100.0, 101.6]}):
+        if pf.get_btc_1h_change_pct() != 1.6:
+            raise RuntimeError("Niepoprawne obliczenie zmiany BTC w ostatniej godzinie")
+    with mock.patch.object(pf, "load_positions", return_value=[]), \
+         mock.patch.object(pf, "get_daily_guard_status", return_value={"locked": True}):
+        try:
+            pf.add_position("BITGET", "TESTUSDT", "LONG", 100.0, 98.6, [101.05], 1.0, 10.0, 1.0, 10)
+        except ValueError as err:
+            if "DAILY_LOCK" not in str(err):
+                raise
+        else:
+            raise RuntimeError("DAILY_LOCK nie blokuje dodania pozycji")
+    with mock.patch.object(pf, "load_positions", return_value=correlation_positions[:1]), \
+         mock.patch.object(pf, "get_daily_guard_status", return_value={"locked": False}), \
+         mock.patch.object(pf, "get_btc_1h_change_pct", return_value=2.0):
+        try:
+            pf.add_position("BITGET", "TESTUSDT", "LONG", 100.0, 98.6, [101.05], 1.0, 10.0, 1.0, 10)
+        except ValueError as err:
+            if "CORRELATION_GUARD" not in str(err):
+                raise
+        else:
+            raise RuntimeError("CORRELATION_GUARD nie blokuje dodania pozycji ponad limit")
+
+    with tempfile.TemporaryDirectory() as guard_dir:
+        with mock.patch.object(pf, "DAILY_GUARD_FILE", os.path.join(guard_dir, "daily_guard.json")), \
+             mock.patch.object(pf, "warsaw_now", return_value=datetime(2026, 11, 25, 12, 0, tzinfo=timezone(timedelta(hours=1)))), \
+             mock.patch.object(pf.cp, "load_settings", return_value={"capital": 200.0}):
+            daily_loss_trade = {
+                "id": "test_daily_loss", "symbol": "TESTUSDT", "side": "LONG",
+                "tracked_as": "OBSTAWIONE", "entry": 100.0, "stop": 98.0,
+                "qty": 100.0, "risk": 0.1, "tp": [], "hit_tps": [],
+                "tp_weights": [], "tp_r": [],
+            }
+            daily_close = pf.record_closed_position(daily_loss_trade, 99.93)
+            daily_status = pf.get_daily_guard_status()
+            if not daily_close["lock_activated"] or not daily_status["locked"] or daily_status["lock_reason"] != "daily_loss":
+                raise RuntimeError("DAILY_LOCK nie aktywowal sie przy dziennej stracie >=3.5%")
+            if daily_status["lock_until_date"] != "2026-11-26":
+                raise RuntimeError("DAILY_LOCK ma niepoprawny termin odblokowania w Europe/Warsaw")
+            with mock.patch.object(pf.cp, "send_telegram", return_value=True) as send_notice:
+                if not pf.send_pending_daily_lock_notice() or pf.send_pending_daily_lock_notice() or send_notice.call_count != 1:
+                    raise RuntimeError("Powiadomienie DAILY_LOCK nie jest wysylane jednorazowo")
+            if not pf.unlock_daily_guard() or pf.get_daily_guard_status()["locked"]:
+                raise RuntimeError("Reczne odblokowanie DAILY_LOCK nie dziala")
+
+            with mock.patch.object(pf, "warsaw_now", return_value=datetime(2026, 11, 26, 0, 0, tzinfo=timezone(timedelta(hours=1)))):
+                reset_status = pf.get_daily_guard_status()
+                if reset_status["date"] != "2026-11-26" or reset_status["realized_pnl_usdt"] != 0.0:
+                    raise RuntimeError("Daily guard nie resetuje wyniku o polnocy Europe/Warsaw")
+                stop_trade = {
+                    "id": "test_sl_1", "symbol": "TESTUSDT", "side": "LONG",
+                    "tracked_as": "OBSTAWIONE", "entry": 100.0, "stop": 99.5,
+                    "qty": 1.0, "risk": 0.1, "tp": [], "hit_tps": [],
+                    "tp_weights": [], "tp_r": [],
+                }
+                first_sl = pf.record_closed_position(stop_trade, 99.0)
+                second_trade = dict(stop_trade, id="test_sl_2")
+                second_sl = pf.record_closed_position(second_trade, 99.0)
+                streak_status = pf.get_daily_guard_status()
+                if first_sl["lock_activated"] or not second_sl["lock_activated"] or streak_status["consecutive_sl"] != 2:
+                    raise RuntimeError("DAILY_LOCK nie aktywowal sie po dwoch SL pod rzad")
+                ignored_close = pf.record_closed_position(dict(stop_trade, tracked_as="NIEOBSTAWIONE"), 90.0)
+                if ignored_close["recorded"]:
+                    raise RuntimeError("Daily guard zarejestrowal pozycje nieoznaczona OBSTAWIONE")
 
     # 4. API Bitget: wszystkie 3 koszyki par + swiece 4 interwalow (limit 100)
     t60 = apm.get_cfd_top60_symbols()

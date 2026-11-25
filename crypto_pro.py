@@ -291,15 +291,20 @@ def tg_url(tok, m): return "https://" + chr(97) + "pi.telegram.org" + "/bot" + t
 
 def send_telegram(msg, kb=None):
     """Realizuje logike: send telegram. Parametry: msg, kb."""
-    if not os.path.exists(TG_CONFIG_FILE): return
+    if not os.path.exists(TG_CONFIG_FILE): return False
     cfg = json.load(open(TG_CONFIG_FILE))
     tok, cid = cfg.get("token","").strip(), cfg.get("chat_id","").strip()
-    if not tok or not cid: return
+    if not tok or not cid: return False
     payload = {"chat_id": cid, "text": msg, "parse_mode": "HTML"}
     if kb: payload["reply_markup"] = kb
-    try: requests.post(tg_url(tok, "sendMessage"), json=payload, timeout=4)
+    try:
+        response = requests.post(tg_url(tok, "sendMessage"), json=payload, timeout=4)
+        if not response.ok:
+            print(f"TELEGRAM_SEND_ERR: HTTP {response.status_code}", flush=True)
+        return bool(response.ok)
     except Exception as err:
         print("TELEGRAM_SEND_ERR:", str(err).replace(tok, "[REDACTED]"), flush=True)
+        return False
 
 def log_to_csv(row):
     """Realizuje logike: log to csv. Parametry: row."""
@@ -335,7 +340,11 @@ def u_join(*parts):
 
 def get_market_meta(exchange, top_n):
     """Realizuje logike: get market meta. Parametry: exchange, top_n."""
-    min_vol = 5000000.0 if load_settings().get("liq_only", True) else 250000.0
+    min_vol = (
+        apm.MIN_LIQUIDITY_24H_USDT
+        if exchange == "BITGET"
+        else (5000000.0 if load_settings().get("liq_only", True) else 250000.0)
+    )
     rules, prices = {}, {}
     if exchange == "BYBIT":
         info = get_json(u_join("https:", "", "://bybit.com", "v5", "market", "instruments-info"), category="linear", limit=1000)
@@ -359,8 +368,16 @@ def get_market_meta(exchange, top_n):
             if x.get("symbolStatus") == "normal" and sym.endswith("USDT"):
                 step = float(x.get("sizeMultiplier", 0.001))
                 rules[sym] = {"step": step, "min_qty": float(x.get("minTradeNum", step)), "min_notional": float(x.get("minTradeUSDT", 5.0)), "max_dev": EX_MAX_DEV.get(exchange, 5.0)}
-        valid = [t for t in tick["data"] if isinstance(t, dict) and t.get("symbol") in rules and float(t.get("turnover24h", 0)) >= min_vol]
-        valid.sort(key=lambda x: float(x.get("usdtVolume", 0)), reverse=True)
+        valid = [
+            ticker for ticker in tick["data"]
+            if isinstance(ticker, dict)
+            and ticker.get("symbol") in rules
+            and apm.is_liquid_24h_volume(ticker.get("usdtVolume") or ticker.get("turnover24h", 0))
+        ]
+        valid.sort(
+            key=lambda ticker: float(ticker.get("usdtVolume") or ticker.get("turnover24h", 0)),
+            reverse=True,
+        )
         for t in valid[:top_n]: prices[t["symbol"]] = float(t["lastPr"])
         return [t["symbol"] for t in valid[:top_n]], rules, prices
     else:
@@ -515,6 +532,11 @@ def format_tg_card(h, ex, tag=""):
     lev = f"{plan['leverage']}x" if plan else "n/a"
     margin = f"${plan['margin']:.2f}" if plan else "n/a"
     risk = f"${plan['risk_usdt']:.2f}" if plan else "n/a"
+    guard_notice = (
+        "\n🔴 <b>CORRELATION_GUARD — pozycja kierunkowa zablokowana</b>"
+        if h.get("correlation_guard") == "CORRELATION_GUARD" else ""
+    )
+    funding_notice = f"\n{h['funding_warning']}" if h.get("funding_warning") else ""
     return (
         f"{status_icon} <b>{st}{tag} | {h['symbol']} ({ex})</b> | Grupa {group} ({h.get('win_prob', 0)}%)\n"
         f"Kierunek: <b>{h['side']}</b> | Status: <b>{st}</b>\n"
@@ -528,6 +550,7 @@ def format_tg_card(h, ex, tag=""):
         f"🎯 TP3 (2.5R, 20%): <code>{fmt_p(tp3).strip()}</code>\n"
         f"⚙️ LEV: <b>{lev}</b> | MARG: <b>{margin}</b> | Ryzyko: <b>{risk}</b>\n"
         f"🧬 Pattern Matcher: <b>{pattern}</b>"
+        f"{funding_notice}{guard_notice}"
     )
 
 def _scan_one_coin(args):
@@ -611,7 +634,41 @@ def _scan_one_coin(args):
 
     ema200_1h = ema(h1["c"], 200)
     ema_dist_pct = (h1["c"][-1] - ema200_1h[-1]) / ema200_1h[-1] * 100.0 if len(ema200_1h) >= 200 and ema200_1h[-1] else 0.0
-    return ("hit", {"win_prob": win_prob, "prob_tier": prob_tier, "adx": adx_val, "vol_r": vol_mult_val, "symbol": sym, "side": "LONG" if td == 1 else "SHORT", "is_trig": is_trig, "price_ok": price_ok, "gap_pct": gap_pct, "max_dev": max_d, "price": price, "entry": entry, "stop": stop, "tp": tp, "dist_atr": round(dist_atr, 2), "dist_pct": round(dist_pct, 2), "eta_str": eta_str, "mom": mom, "qty": qty, "notional": round(notional, 1), "lev": lev, "req_cap": req_cap, "dev_pct": dev_pct, "atr_value": atr_val, "atr_pct": round(atr_val / price * 100.0, 4), "ema200_dist_pct": round(ema_dist_pct, 3), "hour": cur_h, "ts_epoch": int(time.time())})
+    funding_pct = apm.get_derivatives_metrics(sym).get("funding_pct", 0.0)
+    funding_warning = apm.get_upcoming_funding_warning("LONG" if td == 1 else "SHORT", funding_pct)
+    return ("hit", {"win_prob": win_prob, "prob_tier": prob_tier, "adx": adx_val, "vol_r": vol_mult_val, "symbol": sym, "side": "LONG" if td == 1 else "SHORT", "is_trig": is_trig, "price_ok": price_ok, "gap_pct": gap_pct, "max_dev": max_d, "price": price, "entry": entry, "stop": stop, "tp": tp, "dist_atr": round(dist_atr, 2), "dist_pct": round(dist_pct, 2), "eta_str": eta_str, "mom": mom, "qty": qty, "notional": round(notional, 1), "lev": lev, "req_cap": req_cap, "dev_pct": dev_pct, "atr_value": atr_val, "atr_pct": round(atr_val / price * 100.0, 4), "ema200_dist_pct": round(ema_dist_pct, 3), "hour": cur_h, "ts_epoch": int(time.time()), "funding_pct": funding_pct, "funding_warning": funding_warning})
+
+def apply_correlation_guard(hits, btc_1h_change_pct=None):
+    """Splits candidates into direction-cap-eligible and blocked setups, reserving slots per scan."""
+    btc_change = btc_1h_change_pct
+    if btc_change is None:
+        try:
+            btc_change = pf.get_btc_1h_change_pct()
+        except Exception as err:
+            print(f"CORRELATION_GUARD_BTC_ERR: {err}", flush=True)
+    positions = [
+        position for position in pf.load_positions()
+        if position.get("tracked_as") == "OBSTAWIONE"
+    ]
+    eligible, blocked = [], []
+    ordered_hits = sorted(hits, key=lambda hit: (-hit.get("win_prob", 0), hit.get("req_cap", 0)))
+    for hit in ordered_hits:
+        guard = pf.check_directional_correlation(hit.get("side", ""), btc_change, positions)
+        hit["correlation_guard"] = guard["reason"]
+        hit["correlation_guard_count"] = guard["same_direction"]
+        hit["correlation_guard_limit"] = guard["limit"]
+        if guard["blocked"]:
+            blocked.append(hit)
+            btc_text = "unknown" if btc_change is None else f"{btc_change:+.2f}%"
+            print(
+                f"{Y}CORRELATION_GUARD BLOCKED: {hit.get('symbol')} {hit.get('side')} "
+                f"({guard['same_direction']}/{guard['limit']}); BTC 1h {btc_text}{W}",
+                flush=True,
+            )
+        else:
+            eligible.append(hit)
+            positions.append({"tracked_as": "OBSTAWIONE", "side": hit.get("side")})
+    return eligible, blocked
 
 EX_COUNTS = {}
 
@@ -706,13 +763,15 @@ def run_full_scan(show_term=False, tg_mid=None):
                         pass
 
         if show_term: print("\r" + " " * 55 + "\r", end="")
-        LATEST.update({"hits": sorted(hits, key=lambda x: (-x.get("win_prob", 50), x["req_cap"])), "near": sorted(near, key=lambda x: x["dist_atr"]), "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "exchange": ex})
+        sorted_hits = sorted(hits, key=lambda x: (-x.get("win_prob", 50), x["req_cap"]))
+        eligible_hits, blocked_hits = apply_correlation_guard(sorted_hits)
+        LATEST.update({"hits": eligible_hits + blocked_hits, "near": sorted(near, key=lambda x: x["dist_atr"]), "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "exchange": ex})
     finally:
         PROG.update({"running": False, "pct": 100, "eta": 0, "sym": "Gotowe"})
 
 app = Flask(__name__)
 HTML_TPL = """<!DOCTYPE html>\n<html lang="pl"><head><meta http-equiv="refresh" content="30"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">\n<title>Crypto Pro Multi-Scanner</title>\n<style>\nbody{background:#0d1117;color:#c9d1d9;font-family:-apple-system,sans-serif;margin:0;padding:12px}\n.hdr{display:flex;justify-content:space-between;align-items:center;background:#161b22;padding:12px;border-radius:10px;border:1px solid #30363d;margin-bottom:12px;flex-wrap:wrap;gap:8px}\n.btn{background:#238636;color:#fff;border:none;padding:7px 10px;border-radius:6px;font-weight:bold;text-decoration:none;font-size:12px;cursor:pointer}\n.btn-b{background:#1f6feb} .btn-g{background:#30363d}\n.pwrap{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:10px;margin-bottom:12px;display:{{'block' if prog.running else 'none'}}}\n.pbar-bg{background:#0d1117;border-radius:8px;height:18px;overflow:hidden;border:1px solid #30363d;margin-top:6px}\n.pbar-fill{background:linear-gradient(90deg,#1f6feb,#3fb950);height:100%;width:{{prog.pct}}%;transition:width 0.4s}\n.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:12px;margin-bottom:12px}\n.long{color:#3fb950;font-weight:bold} .short{color:#f85149;font-weight:bold}\n.badge{padding:2px 7px;border-radius:12px;font-size:11px;font-weight:bold;background:#1f6feb;color:#fff} .trig{background:#238636} .far{background:#da3633}\n.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}\n.box{background:#0d1117;padding:6px;border-radius:6px;border:1px solid #21262d;font-size:12px;text-align:center} .cp{cursor:pointer;color:#58a6ff;font-weight:bold}\n</style>\n<script>\nfunction cp(v){navigator.clipboard.writeText(v);alert('Skopiowano: '+v);}\nfunction trig(){document.getElementById('pwrap').style.display='block';fetch('/start');poll();}\nfunction poll(){let iv=setInterval(()=>{fetch('/prog').then(r=>r.json()).then(d=>{document.getElementById('pfill').style.width=d.pct+'%';document.getElementById('ptxt').innerText='Skanuje: '+d.sym+' ('+d.done+'/'+d.total+') — '+d.pct+'% | ETA: ~'+d.eta+'s';if(!d.running&&d.pct>=100){clearInterval(iv);location.reload();}});},800);}\nwindow.onload=()=>{if({{'true' if prog.running else 'false'}})poll();};\n</script></head><body>\n<div class="hdr">\n  <div><b>📊 {{cfg.exchange}} TOP {{cfg.top_n}}</b><br><small style="color:#8b949e">{{res.time}} | Kap: {{cfg.capital}}$</small></div>\n  <div style="display:flex;gap:4px;flex-wrap:wrap">\n    {% for e in ['BINANCE','BYBIT','BITGET','WEEX','BITBASE'] %}\n    <a href="/ex/{{e}}" class="btn {{'btn-b' if cfg.exchange==e else 'btn-g'}}">{{'✅ ' if cfg.exchange==e else ''}}{{e}}</a>\n    {% endfor %}\n    <a href="/portfolio" class="btn" style="background:#d29922;color:#000">💼 Portfel ({{pf.count}})</a> <a href="/planner" class="btn btn-b">🧮 Planner</a> <a href="/demo24" class="btn btn-g">🧪 Demo 24H</a> <a href="/backtest?sym=BTCUSDT" class="btn btn-g">📜 Backtest 2020-26</a>\n    <a href="/live_tgl" class="btn" style="background:{{'#da3633' if live else '#30363d'}}">{{'⏹ Stop Live' if live else '🔄 Auto Live 5m'}}</a> <button onclick="trig()" class="btn">🔍 Skanuj</button>\n  </div>\n</div>\n<div id="pwrap" class="pwrap"><div id="ptxt" style="font-size:12px;color:#58a6ff;font-weight:bold">Skanuje: {{prog.sym}} — {{prog.pct}}% | ETA: ~{{prog.eta}}s</div><div class="pbar-bg"><div id="pfill" class="pbar-fill"></div></div></div>\n<div class="card" style="padding:8px 12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;font-size:12px"><div><b>💧 Grupa:</b>
-    <a href="/liq/1" class="btn {{'btn-b' if cfg.liq_only else 'btn-g'}}" style="padding:3px 7px;font-size:11px">{{'✅ ' if cfg.liq_only else ''}}💧 Plynne (&gt;5M$)</a>
+    <a href="/liq/1" class="btn {{'btn-b' if cfg.liq_only else 'btn-g'}}" style="padding:3px 7px;font-size:11px">{{'✅ ' if cfg.liq_only else ''}}💧 Plynne (min. 15M$)</a>
     <a href="/liq/0" class="btn {{'btn-b' if not cfg.liq_only else 'btn-g'}}" style="padding:3px 7px;font-size:11px;margin-right:6px">{{'✅ ' if not cfg.liq_only else ''}}🌊 Wszystkie</a>
     <b>📊 Ilosc:</b> {% for n in tiers %}<a href="/top/{{n}}" class="btn {{'btn-b' if cfg.top_n==n else 'btn-g'}}" style="padding:3px 7px;font-size:11px;margin-right:3px">{{'✅ ' if cfg.top_n==n else ''}}{{'WSZYSTKIE (' ~ n ~ ')' if n==mx_coins else 'TOP ' ~ n}}</a>{% endfor %}</div><form action="/go_analyze" method="get" style="display:flex;gap:4px"><input name="sym" placeholder="np. BTCUSDT" style="background:#0d1117;color:#fff;border:1px solid #30363d;border-radius:5px;padding:4px 7px;width:105px;font-size:12px"><button type="submit" class="btn btn-b" style="padding:4px 8px;font-size:11px">📈 Analizuj</button></form></div>
 <div class="card" style="padding:8px 12px;border-color:#d29922;font-size:12px">
@@ -899,7 +958,11 @@ def r_add_pos():
     else:
         p = pm.calc_plan(ex, sym, max(1000.0, float(cfg.get("capital", 200.0))), cfg["risk_pct"], 20)
     if p:
-        pf.add_position(ex, sym, p["side"], p["entry"], p["stop"], p["tp"], p["qty"], p["rec_margin"], p["risk_usdt"], p["rec_lev"], tracked_as="OBSTAWIONE")
+        try:
+            pf.add_position(ex, sym, p["side"], p["entry"], p["stop"], p["tp"], p["qty"], p["rec_margin"], p["risk_usdt"], p["rec_lev"], tracked_as="OBSTAWIONE")
+        except ValueError as err:
+            from html import escape
+            return f"<p>{escape(str(err))}</p><a href='/'>Wróć do skanera</a>", 409
     return redirect(url_for("r_portfolio"))
 
 @app.route("/hit_tp/<pid>/<int:idx>")
@@ -1243,6 +1306,7 @@ def tg_listener():
         print("TG_LISTENER_CONFIG_ERR: token or chat_id is empty", flush=True)
         return
     print("TG_LISTENER_CONFIG_OK: token and chat_id loaded; polling Telegram", flush=True)
+    pf.send_pending_daily_lock_notice()
 
     def log_listener_error(context, error):
         """Prints listener errors with the Telegram bot token redacted."""
@@ -1388,16 +1452,35 @@ def tg_listener():
                         print("TG_LISTENER_STATUS: command received", flush=True)
                         scan_state = f"w toku ({PROG.get('pct', 0)}%)" if PROG.get("running") else "bezczynny"
                         last_scan = LATEST.get("ts") or LATEST.get("time", "Brak skanu")
+                        daily_guard = pf.get_daily_guard_status()
                         status_text = (
                             "📊 STATUS CRYPTO PRO\n"
                             f"Live CFD: {'ON' if CFD_LIVE_ACTIVE else 'OFF'}\n"
                             f"Tryb Live: {'ON' if LIVE_ACTIVE else 'OFF'}\n"
                             f"Skan: {scan_state}\n"
                             f"Ostatni skan: {last_scan}\n"
-                            f"Trafienia: {len(LATEST.get('hits', []))}"
+                            f"Trafienia: {len(LATEST.get('hits', []))}\n"
+                            f"{daily_guard['status_text']}\n"
+                            f"Wynik dziś: {daily_guard['realized_pnl_usdt']:+.2f}$ "
+                            f"({daily_guard['loss_pct']:.2f}% straty od ${daily_guard['base_capital']:.2f})\n"
+                            f"SL pod rząd: {daily_guard['consecutive_sl']}"
                         )
                         send_command_reply(message, status_text)
                         print("TG_LISTENER_STATUS: reply delivered", flush=True)
+                    elif command == "/unlock":
+                        daily_guard = pf.get_daily_guard_status()
+                        if not daily_guard["locked"]:
+                            send_command_reply(message, "DAILY_LOCK nie jest aktywny.")
+                        else:
+                            unlock_keyboard = {"inline_keyboard": [[
+                                {"text": "✅ Potwierdź ręczne odblokowanie", "callback_data": "unlock_confirm"},
+                                {"text": "Anuluj", "callback_data": "unlock_cancel"},
+                            ]]}
+                            send_command_reply(
+                                message,
+                                "⚠️ Potwierdź ręczne zdjęcie DAILY_LOCK. To wznowi alerty i pozwoli dodawać pozycje.",
+                                unlock_keyboard,
+                            )
                     elif command == "/pause":
                         LIVE_ACTIVE = False
                         CFD_LIVE_ACTIVE = False
@@ -1550,7 +1633,7 @@ def tg_listener():
                     elif command.startswith("/"):
                         send_command_reply(
                             message,
-                            "Nieznana komenda. Dostępne: /status, /pause, /obstaw, /edytuj, /start, /menu.",
+                            "Nieznana komenda. Dostępne: /status, /pause, /obstaw, /edytuj, /unlock, /start, /menu.",
                         )
                     else:
                         tg_menu(incoming_chat_id, tok)
@@ -1564,7 +1647,23 @@ def tg_listener():
                     cb = callback.get("data", "")
                     requests.post(tg_url(tok, "answerCallbackQuery"), json={"callback_query_id": u["callback_query"]["id"]})
                     ex = load_settings()["exchange"]
-                    if cb.startswith("plan_"):
+                    if cb == "unlock_request":
+                        if pf.get_daily_guard_status()["locked"]:
+                            unlock_keyboard = {"inline_keyboard": [[
+                                {"text": "✅ Potwierdź ręczne odblokowanie", "callback_data": "unlock_confirm"},
+                                {"text": "Anuluj", "callback_data": "unlock_cancel"},
+                            ]]}
+                            send_telegram("⚠️ Potwierdź ręczne zdjęcie DAILY_LOCK.", unlock_keyboard)
+                        else:
+                            send_telegram("DAILY_LOCK nie jest aktywny.")
+                    elif cb == "unlock_confirm":
+                        if pf.unlock_daily_guard():
+                            send_telegram("✅ DAILY_LOCK zdjęty ręcznie. Alerty wejścia zostały wznowione.")
+                        else:
+                            send_telegram("DAILY_LOCK nie jest już aktywny.")
+                    elif cb == "unlock_cancel":
+                        send_telegram("Ręczne odblokowanie anulowane; DAILY_LOCK pozostaje aktywny.")
+                    elif cb.startswith("plan_"):
                         psym = cb.replace("plan_", "").strip()
                         try:
                             cfg_p = load_settings()
@@ -1856,17 +1955,24 @@ def tg_listener():
                                     requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": nh_txt, "parse_mode": "HTML", "reply_markup": {"inline_keyboard": [[{"text": "🔄 Skanuj ponownie", "callback_data": "scan_cfd10"}, {"text": "⬅ Menu", "callback_data": "back_menu"}]]}}, timeout=15)
                                 else:
                                     hits.sort(key=lambda x: -x.get("win_prob", 0))
-                                    top3_m = hits.__getitem__(slice(0, 2))
-                                    LATEST["hits"] = top3_m
+                                    eligible_hits, blocked_hits = apply_correlation_guard(hits)
+                                    LATEST["hits"] = eligible_hits + blocked_hits
+                                    top3_m = eligible_hits.__getitem__(slice(0, 2))
                                     log_cfd_hits_to_file(top3_m, "SKAN")
-                                    requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": f"⠀⠀🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n✅ <b>SĄ AKTYWNE OKAZJE!</b> ✅\n⠀⠀🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n⚡ <b>SYGNALY CFD TOP-100</b> | {btc_cm}\nZnaleziono <b>{len(top3_m)}</b> najlepsze okazje:", "parse_mode": "HTML"}, timeout=15)
-                                    for h in top3_m:
-                                        card_m = format_tg_card(h, "BITBASE")
-                                        kb_m = {"inline_keyboard": [
-                                            [{"text": f"✅ Obstawiłem {h['symbol']}", "callback_data": f"addp_{h['symbol']}"}],
-                                            [{"text": f"🧮 Plan ({h['symbol']})", "callback_data": f"plan_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}, {"text": "🛡️ Audyt", "callback_data": f"aud_{h['symbol']}"}],
-                                        ]}
-                                        requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": card_m, "parse_mode": "HTML", "reply_markup": kb_m}, timeout=15)
+                                    daily_locked = pf.get_daily_guard_status()["locked"]
+                                    if daily_locked:
+                                        send_telegram("🔴 DAILY DRAWDOWN LOCK AKTYWNY — skan zapisany, alerty wejścia są wstrzymane.")
+                                    elif top3_m:
+                                        requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": f"⠀⠀🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n✅ <b>SĄ AKTYWNE OKAZJE!</b> ✅\n⠀⠀🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n⚡ <b>SYGNALY CFD TOP-100</b> | {btc_cm}\nZnaleziono <b>{len(top3_m)}</b> najlepsze okazje:", "parse_mode": "HTML"}, timeout=15)
+                                        for h in top3_m:
+                                            card_m = format_tg_card(h, "BITBASE")
+                                            kb_m = {"inline_keyboard": [
+                                                [{"text": f"✅ Obstawiłem {h['symbol']}", "callback_data": f"addp_{h['symbol']}"}],
+                                                [{"text": f"🧮 Plan ({h['symbol']})", "callback_data": f"plan_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}, {"text": "🛡️ Audyt", "callback_data": f"aud_{h['symbol']}"}],
+                                            ]}
+                                            requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": card_m, "parse_mode": "HTML", "reply_markup": kb_m}, timeout=15)
+                                    else:
+                                        send_telegram(f"🟡 CORRELATION_GUARD: {len(blocked_hits)} sygnałów przekroczyło limit kierunkowy; alerty wejścia pominięto.")
                             except Exception as err:
                                 error_text = log_listener_error("TG_LISTENER_SCAN_ERR", err)
                                 requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": f"⚠️ Blad skanu CFD: <code>{error_text}</code>", "parse_mode": "HTML"}, timeout=15)
@@ -1877,11 +1983,22 @@ def tg_listener():
                         def bg():
                             run_full_scan(show_term=False, tg_mid=mid)
                             hits_sorted = sorted(LATEST["hits"], key=lambda x: (-x.get("win_prob", 0), x["req_cap"]))
+                            entry_hits = [
+                                hit for hit in hits_sorted
+                                if hit.get("correlation_guard") != "CORRELATION_GUARD"
+                            ]
                             requests.post(tg_url(tok, "editMessageText"), json={"chat_id": cid, "message_id": mid, "text": f"✅ <b>Gotowe ({ex})!</b> Znaleziono: <b>{len(hits_sorted)}</b> (od najpewniejszej od gory) | W poblizu: <b>{len(LATEST['near'])}</b>", "parse_mode": "HTML"})
-                            for idx, h in enumerate(hits_sorted, 1):
+                            if pf.get_daily_guard_status()["locked"]:
+                                send_telegram("🔴 DAILY DRAWDOWN LOCK AKTYWNY — skan zapisany, alerty wejścia są wstrzymane.")
+                                entry_hits = []
+                            for idx, h in enumerate(entry_hits, 1):
                                 kb_h = {"inline_keyboard": [[{"text": f"✅ Obstawiłem {h['symbol']}", "callback_data": f"addp_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}, {"text": "🧮 Planner", "callback_data": f"plan_{h['symbol']}"}], [{"text": f"🌐 Otworz {ex} ({h['symbol']})", "url": get_exchange_url(ex, h['symbol'])}]]}
                                 send_telegram(format_tg_card(h, ex, f" #{idx}"), kb_h)
                                 time.sleep(0.35)
+                            if hits_sorted and not entry_hits:
+                                blocked_count = sum(1 for hit in hits_sorted if hit.get("correlation_guard") == "CORRELATION_GUARD")
+                                if blocked_count:
+                                    send_telegram(f"🟡 CORRELATION_GUARD: {blocked_count} sygnałów przekroczyło limit kierunkowy; alerty wejścia pominięto.")
                             if LATEST["near"]:
                                 rows = [f"{n['symbol'].replace('USDT',''):<6} {n['side']:<5} {n['dist_pct']}% ({n['eta_str']})" for n in LATEST["near"].__getitem__(slice(0, 12))]
                                 send_telegram("👀 <b>Obserwowane (blisko wybicia):</b>\n<pre>" + "\n".join(rows) + "</pre>")
@@ -2107,8 +2224,9 @@ def draw_box(title, col, rows):
         for h in rows:
             sym = h["symbol"].replace("USDT", "")[:w_s]
             kc = G if h["side"] == "LONG" else R
-            sc = R if not h.get("price_ok", True) or h.get("win_prob", 0) < 60 else (Y if h.get("is_trig") or h.get("win_prob", 0) < 75 else G)
-            st = "TRIGG." if h["is_trig"] else ("DALEKO" if not h.get("price_ok", True) else "GOTOWY")
+            blocked = h.get("correlation_guard") == "CORRELATION_GUARD"
+            sc = R if blocked or not h.get("price_ok", True) or h.get("win_prob", 0) < 60 else (Y if h.get("is_trig") or h.get("win_prob", 0) < 75 else G)
+            st = "CORR!" if blocked else ("TRIGG." if h["is_trig"] else ("DALEKO" if not h.get("price_ok", True) else "GOTOWY"))
             plan = get_bitbase_plan(h)
             targets = plan["targets"] if plan else h.get("tp", [])[:3]
             targets.extend([h.get("entry", 0)] * (3 - len(targets)))
@@ -2128,8 +2246,9 @@ def draw_box(title, col, rows):
         for idx, h in enumerate(rows):
             sym = h["symbol"].replace("USDT", "")[:w_s]
             kc = G if h["side"] == "LONG" else R
-            sc = R if not h.get("price_ok", True) or h.get("win_prob", 0) < 60 else (Y if h.get("is_trig") or h.get("win_prob", 0) < 75 else G)
-            st = "TRIGG." if h["is_trig"] else ("DALEKO" if not h.get("price_ok", True) else "GOTOWY")
+            blocked = h.get("correlation_guard") == "CORRELATION_GUARD"
+            sc = R if blocked or not h.get("price_ok", True) or h.get("win_prob", 0) < 60 else (Y if h.get("is_trig") or h.get("win_prob", 0) < 75 else G)
+            st = "CORR!" if blocked else ("TRIGG." if h["is_trig"] else ("DALEKO" if not h.get("price_ok", True) else "GOTOWY"))
             print(f"{col}│{W}{B}{sym:<{w_s}}{W}{col}│{W}{kc}{h['side']:<5}{W}{col}│{W}{sc}{st:<6}{W}{col}│{W}{fmt_p(h['price']).strip()[:wp]:>{wp}}{col}│{W}{fmt_p(h['entry']).strip()[:we]:>{we}}{col}│{W}{fmt_p(h['stop']).strip()[:wsl]:>{wsl}}{col}│{W}{col}{h['req_cap']:>3}${W}{col}│{W}")
             plan = get_bitbase_plan(h)
             target_values = plan["targets"] if plan else h.get("tp", [])[:3]
@@ -2316,7 +2435,11 @@ def main():
                     ex_a = "BITGET"
                     cfg_a = load_settings()
                     p = pm.calc_plan(ex_a, asym, cfg_a["capital"], cfg_a["risk_pct"], 20)
-                    if p: pf.add_position(ex_a, asym, p["side"], p["entry"], p["stop"], p["tp"], p["qty"], p["rec_margin"], p["risk_usdt"], p["rec_lev"])
+                    if p:
+                        try:
+                            pf.add_position(ex_a, asym, p["side"], p["entry"], p["stop"], p["tp"], p["qty"], p["rec_margin"], p["risk_usdt"], p["rec_lev"])
+                        except ValueError as err:
+                            print(f"{Y}{err}{W}", flush=True)
                 elif cmd.startswith("T ") and len(cmd.split()) == 3:
                     _, pi, ti = cmd.split()
                     lst = pf.load_positions()
@@ -2495,6 +2618,10 @@ def cfd_live_bg_loop():
                     x for x in new_hits
                     if x.get("win_prob", 0) >= max(min_p_l, 75) and x.get("price_ok", False)
                 ]
+                eligible_hits, blocked_hits = apply_correlation_guard(new_hits)
+                LATEST["hits"] = eligible_hits + blocked_hits
+                LATEST["ts"] = datetime.now().strftime("%H:%M:%S (LIVE CFD)")
+                new_hits = eligible_hits
                 last_alert_ts = SEEN_CFD_SIGS.get("__LAST_ANY_ALERT__", 0)
                 maybe_send_user_override_summary()
                 tc_l = json.load(open(TG_CONFIG_FILE, encoding="utf-8-sig")) if os.path.exists(TG_CONFIG_FILE) else {}
@@ -2505,9 +2632,10 @@ def cfd_live_bg_loop():
                     new_hits.sort(key=lambda x: -x.get("win_prob", 0))
                     top3_live = new_hits.__getitem__(slice(0, 2))
                     log_cfd_hits_to_file(top3_live, "LIVE")
-                    LATEST["hits"] = top3_live
-                    LATEST["ts"] = datetime.now().strftime("%H:%M:%S (LIVE CFD)")
-                    if tok_l and cid_l:
+                    daily_guard = pf.get_daily_guard_status()
+                    if daily_guard["locked"]:
+                        print("DAILY_LOCK active: suppressing automatic Telegram entry alerts", flush=True)
+                    elif tok_l and cid_l:
                         btc_c = str(btc_lbl).replace("<", "&lt;").replace(">", "&gt;")
                         requests.post(tg_url(tok_l, "sendMessage"), json={"chat_id": cid_l, "text": f"⠀⠀🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n✅ <b>SĄ AKTYWNE OKAZJE!</b> ✅\n⠀⠀🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n🚨 <b>AUTO-ALERT CFD LIVE (15m)</b> | {btc_c}\nZnaleziono <b>{len(top3_live)}</b> swieze okazje:", "parse_mode": "HTML"}, timeout=15)
                         for h in top3_live:

@@ -1,5 +1,12 @@
 # 📜 PEŁNA HISTORIA ZMIAN (CHANGELOG) — CRYPTO PRO CFD
 
+## 2026-11-26 — Capital Shield Stage 1
+- Add a persistent, Git-ignored Warsaw-day drawdown lock for closed `OBSTAWIONE` positions, triggered by two consecutive stop-losses or net daily losses of at least 3.5% of the day's base capital; add `/status`, confirmed `/unlock`, and suppress new entries while scanning continues.
+- Enforce a two-position same-direction cap, tightened to one during absolute BTC 1h moves above 1.5%, and label blocked setups `CORRELATION_GUARD`.
+- Apply the 15M USDT/24h Bitget turnover floor using the endpoint's `usdtVolume` field; add a regression test for that response shape.
+- Warn on adverse funding above 0.05% when the next UTC 00:00/08:00/16:00 settlement is under 30 minutes away; reject non-finite turnover and avoid persisting an in-progress lock notice across restarts.
+- Validation: Pylance syntax checks found no syntax errors in changed Python files; `smart_verify.py` exited 0 with its QA PASS banner, and `self_test.py` exited 0. The suite reports 9/9 stages (not 8/8); the VS Code runner did not expose the standalone `self_test.py` stdout.
+
 ## 2026-11-25 — BitBase signal plan, alerts and position tracking
 - Add `USD1` to the stablecoin blacklist and align console/Telegram status colors with signal groups.
 - Add a BitBase-only 1.5% risk plan with 1.2–1.6 ATR stops capped at 2.2%, safe leverage/margin, and 0.75R/1.5R/2.5R targets split 50/30/20.

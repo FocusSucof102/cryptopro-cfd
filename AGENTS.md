@@ -1,6 +1,6 @@
 # 🎯 AGENTS.md — INSTRUKCJA I ZASADY SYSTEMOWE DLA AGENTÓW AI
 1. **Single Source of Truth:** Jedynym źródłem wiedzy jest `PROJECT_MASTER.md`. Przed zmianą przeczytaj `PROJECT_MASTER.md`, `README.md`, `CHANGELOG.md`.
-2. **Cel:** Autonomiczny system CFD/Futures (BitBase Futures, dane Bitget USDT-Futures TOP-60 >10M$), maksymalizujący zysk netto po prowizji `-0.07R` na transakcję.
+2. **Cel:** Autonomiczny system CFD/Futures (BitBase Futures, dane Bitget USDT-Futures, płynność co najmniej 15M USDT/24h), maksymalizujący zysk netto po prowizji `-0.07R` na transakcję.
 3. **Pakt Obostrzeń & DevSecOps:** Nigdy nie ujawniaj tokenów/kluczy (`tg_config.json`, `active_positions.json` chronione). Nie przywracaj giełd spotowych ani zablokowanych API (Binance/Bybit).
 4. **Zasada Podwójnej Naprawy:** Po zmianie uruchom `smart_verify.py` (QA 5.0 PRO+ AST/Scope-Guard). Błąd = napraw kod + dopisz regułę do `auto_repair_mod.py`.
 5. **Standard Specyfikacji Inżynieryjnej:**

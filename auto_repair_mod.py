@@ -7,7 +7,8 @@ JSON_DEFAULTS = {
     "qa_health_history.json": [], "evolution_champion.json": {}, "meta_brain_weights.json": {},
     "nzt_synapses.json": {}, "ai_decisions_log.json": [], "funnel_stats.json": {},
     "risk_config.json": {"capital_usdt": 200.0, "risk_pct": 1.0, "max_drawdown_pct": 6.0, "current_drawdown_pct": 0.0, "safe_lock_active": False},
-    "time_decay_state.json": {"active": False, "cutoff_minutes": 360, "verdict": "KEPT_AS_RESEARCH"}
+    "time_decay_state.json": {"active": False, "cutoff_minutes": 360, "verdict": "KEPT_AS_RESEARCH"},
+    "daily_guard.json": {"date": "", "base_capital": 200.0, "realized_pnl_usdt": 0.0, "consecutive_sl": 0, "locked": False, "lock_until_date": None, "lock_reason": "", "lock_notified": False, "closed_trades": []}
 }
 
 ALIAS_IMPORTS = {

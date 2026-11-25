@@ -1,10 +1,10 @@
 # 🧭 PROJECT_MASTER.md — SINGLE SOURCE OF TRUTH (CRYPTO PRO CFD)
-*Ostatnia pełna aktualizacja: 2026-11-25 | Architektura: 2.0 PRO+ Enterprise*
+*Ostatnia pełna aktualizacja: 2026-11-26 | Architektura: 2.0 PRO+ Enterprise*
 
 ---
 
 ## 🎯 1. CEL GŁÓWNY I PROFIL BIZNESOWY
-- **Cel:** W pełni autonomiczny, wysoce precyzyjny system analityczno-egzekucyjny pod handel kontraktami **BitBase Futures / CFD** oparty na płynnych danych z **Bitget USDT-Futures** (TOP-60 z obrotem > 10M$).
+- **Cel:** W pełni autonomiczny, wysoce precyzyjny system analityczno-egzekucyjny pod handel kontraktami **BitBase Futures / CFD** oparty na płynnych danych z **Bitget USDT-Futures** (pary z obrotem 24h co najmniej 15M USDT).
 - **Optymalizacja zysku:** Maksymalizacja stopy zwrotu netto w `R` po bezwzględnym odliczeniu realnego kosztu transakcyjnego: **`-0.07R` na każdą transakcję** (prowizja giełdowa + poślizg cenowy / spread).
 - **Zarządzanie kapitałem:** Ogólne moduły ryzyka zachowują bazowe `1.0%` na transakcję; osobny plan BitBase w `planner_mod.py` liczy `1.5%` skonfigurowanego kapitału, bezpieczną dźwignię i margin. Żaden plan nie wysyła zleceń na giełdę. Bezpiecznik **Safe-Lock** odcina sygnały poniżej PLATINUM (>= 68%) przy obsuwie kapitału `>= 6%`.
 - **Nadrzędna zasada inżynieryjna:** `PROJECT_MASTER.md` stanowi jedyne i wyłączne źródło prawdy (Single Source of Truth) o stanie projektu, badaniach, architekturze i zadaniach.
@@ -84,6 +84,12 @@ Wszystkie starsze skrypty oraz rozproszone pliki dokumentacji zostały bezpieczn
 - **Pozycje i edycje:** Powiadomienia zarządzania dotyczą tylko pozycji `OBSTAWIONE`. TP1 przesuwa monitorowany SL na Break-Even. Ostrzeżenie `PROFIT_DECAY_WARN` wymaga pozycji obstawionej i cofnięcia co najmniej `0.65R` od MFE `>=1.1R`. Komenda `/edytuj SYMBOL entry=... sl=... tp1=... tp2=... tp3=...` waliduje R:R i odległość od ATR; zapis edycji oraz wyników oryginału i edycji trafia wyłącznie do `user_overrides.json`.
 - **Pattern Matcher:** Win-rate porównuje wyłącznie zamknięte próbki `BITBASE_3TP_V1` z `cfd_live_history.json` i `market_shadow_lab.json`, dopasowane po ATR%, odległości od EMA200 1H, godzinie sesji, kierunku BTC i stronie transakcji. Wynik pokazuje się dopiero od 5 podobnych próbek; porównanie wyniku bota i edycji jest przewidziane dwa razy dziennie.
 - **Walidacja:** Nowe reguły mają testy deterministyczne, ale nie stanowią dowodu przewagi ani wyników walk-forward. Nie uruchamiają zleceń i nie zmieniają ogólnego ryzyka `risk_guard_mod.py`.
+
+### D. Tarcza Kapitału — Etap 1 (26.11.2026)
+- **Daily Drawdown Lock:** `portfolio_mod.py` zapisuje wyłącznie lokalny, ignorowany przez Git stan `daily_guard.json`. Dla pozycji `OBSTAWIONE` śledzi dzienny wynik netto po opłacie `0.07R`; blokuje nowe pozycje i automatyczne alerty wejścia po dwóch kolejnych SL lub stracie dziennej >=3.5% kapitału bazowego. Dzień rozliczany jest według `Europe/Warsaw`, a blokada wygasa o północy następnego dnia. Telegram `/status` pokazuje stan i wynik, `/unlock` wymaga potwierdzenia przyciskiem; skaner nadal pracuje i zapisuje wyniki dla AutoTunera.
+- **Limit kierunkowy:** Maksymalnie dwie obstawione pozycje w tym samym kierunku; limit spada do jednej, gdy bezwzględna zmiana BTC w ostatniej godzinie przekracza 1.5%. Brak wiarygodnej zmiany BTC używa konserwatywnego limitu jednej pozycji. Kolejne sygnały otrzymują `CORRELATION_GUARD`, pozostają widoczne w konsoli i nie generują alertu wejścia.
+- **Płynność i funding:** Bitget USDT-Futures filtruje obrót dobowy poniżej 15M USDT. Karta sygnału może zawierać `WYSOKI FUNDING`, gdy niekorzystna stawka przekracza 0.05% i do najbliższego rozliczenia UTC 00:00/08:00/16:00 pozostaje mniej niż 30 minut.
+- **Zakres walidacji:** Testy deterministyczne obejmują progi płynności i funding, limity korelacji, dzienny rollover, dwa SL z rzędu, próg straty oraz ręczne odblokowanie. Po wdrożeniu `smart_verify.py` zakończył się kodem 0 z banerem QA PASS, a `self_test.py` kodem 0; oba uruchomienia wykonały zestaw 9/9 etapów. Etap nie stanowi dowodu przewagi strategii.
 
 ---
 

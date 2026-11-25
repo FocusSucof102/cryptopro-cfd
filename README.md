@@ -15,7 +15,7 @@ Każda nowa funkcja, pętla lub moduł `.py` dopisywany do projektu **MUSI** by�
 
 ## 🗂️ Architektura Modułów w Repozytorium
 - `crypto_pro.py` — Główny rdzeń systemu: serwer Flask (`:5000`), obsługa bota Telegram (`tg_listener`, `tg_menu`), pętla `cfd_live_bg_loop` (co 15 min + Puls co 30 min), `fast_active_positions_loop` (co 60s) oraz `audit_cfd_history_1m`.
-- `alpha_pro_mod.py` — Dynamiczne pobieranie `TOP-60` kontraktów `BITGET USDT-FUTURES` (`>10M$`), walidacja odległości zleceń CFD (`validate_cfd_order`), pasek wielointerwałowy `MTF (X/4: 15M|1H|4H|1D)` oraz wskaźniki Alpha.
+- `alpha_pro_mod.py` — Dynamiczne pobieranie płynnych kontraktów `BITGET USDT-FUTURES` (obrót 24h co najmniej 15M USDT), walidacja odległości zleceń CFD (`validate_cfd_order`), pasek wielointerwałowy `MTF (X/4: 15M|1H|4H|1D)` oraz wskaźniki Alpha.
 - `auto_tuner_mod.py` — Samooptymalizujący się regulator czułości (`min_prob`, `sl_mult`) na podstawie wyników ze świec `1m`.
 - `portfolio_mod.py` — Zarządzanie otwartymi pozycjami, kontrola marginu/korelacji przed wejściem (`check_new_opportunity_margin`) oraz dzienny wyłącznik straty (`record_closed_trade_pnl`).
 - `planner_mod.py` — Kalkulator ogólny oraz osobny plan BitBase (ryzyko 1.5%, SL ATR, LEV/MARG i TP 0.75R/1.5R/2.5R).
@@ -32,6 +32,7 @@ Pełny zapis wszystkich wdrożonych zmian od początku projektu znajduje się w 
 - Plan BitBase jest wyłącznie analityczny: stałe ryzyko 1.5% kapitału, SL 1.2–1.6 ATR (maks. 2.2%), bezpieczna dźwignia i margin; TP1/TP2/TP3 realizują odpowiednio 50%/30%/20% pozycji.
 - Automatyczny alert Live jest ograniczony do nowych sygnałów Grupy A. Ręczne edycje z `/edytuj` pozostają w lokalnym `user_overrides.json`, oddzielnie od `tuner_state.json`.
 - Pattern Matcher pokazuje historyczne podobieństwo dopiero przy co najmniej 5 zamkniętych próbkach. To informacja opisowa, nie gwarancja przyszłego wyniku.
+- Tarcza Kapitału Etap 1 śledzi dzienne zamknięcia `OBSTAWIONE` w lokalnym `daily_guard.json`, blokuje nowe wejścia po dwóch SL pod rząd lub stracie >=3.5% kapitału bazowego (do północy `Europe/Warsaw`) i umożliwia potwierdzone `/unlock`. Limit kierunkowy wynosi 2 pozycje, a przy zmianie BTC >1.5% w 1h — 1. Filtr Bitget wymaga obrotu 24h >=15M USDT; karta ostrzega o niekorzystnym funding >0.05% w ostatnich 30 minutach przed rozliczeniem.
 
 ## 🧪 Pliki Badawcze i Telemetria (Eksportowane Automatycznie)
 - `cfd_live_history.json` — Główna historia sygnałów Live CFD z telemetrią `MFE/MAE` i diagnozą przyczyn strat.
