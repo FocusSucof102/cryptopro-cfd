@@ -123,3 +123,10 @@ n## ROADMAPA OD 01.12.2026: SAMOUCZACA SIE PETLA PREDYKCJI (SELF-CALIBRATING ENG
 - 2) Decoupling Detector: Wyroznianie tokenow odpornych na spadki BTC (r < 0.30 + wysoki wolumen) jako niezaleznych okazji ALFA.
 - 3) Cluster Risk Cap: Zamiast calkowitej blokady CORR!, dzielenie limitu ryzyka klastra ($3.00) po polowie ($1.50 + $1.50) miedzy 2 najsilniejsze setupy z tego samego klastra.
 - KRYTERIUM AKCEPTACJI: Walidacja w walk_forward_mod.py (OOS > baza, Monte Carlo >= 85%) + python smart_verify.py.
+
+### 6. ARSENAL QUANT 2026 — MIKROSTRUKTURA I ZARZADZANIE KAPITALEM (po 01.12.2026)
+- 1) Liquidation Magnet (liquidation_map_mod.py): Szacowanie skupisk likwidacji z Open Interest i Funding Rate Bitget (unikanie wejsc przed Stop-Huntem i lapanie odbic po kaskadzie).
+- 2) VPIN Toxicity Detector (vpin_flow_mod.py): Mierzenie nierownowagi wolumenowej w paczkach wolumenu (wykrywanie przeplywu poinformowanego kapitalu przed ruchem ceny).
+- 3) Real-Time Orderbook Slippage Guard: Sprawdzanie glebokosci 5 poziomow Bid/Ask przed statusem GOTOWY (blokada sygnalow przy pustym arkuszu/duzym spreadzie).
+- 4) Fractional Kelly Sizer: Dynamiczne skalowanie ryzyka (0.75% - 2.0% kapitalu) na podstawie skalibrowanej skutecznosci z self_learning_loop_mod.py.
+- KRYTERIUM AKCEPTACJI: Kazdy modul wdrazany osobno (1 sesja = 1 modul) i zatwierdzany wylacznie po przejsciu walk_forward_mod.py (OOS > baza, Monte Carlo >= 85%) oraz python smart_verify.py.
