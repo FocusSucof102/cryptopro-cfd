@@ -130,3 +130,4 @@ n## ROADMAPA OD 01.12.2026: SAMOUCZACA SIE PETLA PREDYKCJI (SELF-CALIBRATING ENG
 - 3) Real-Time Orderbook Slippage Guard: Sprawdzanie glebokosci 5 poziomow Bid/Ask przed statusem GOTOWY (blokada sygnalow przy pustym arkuszu/duzym spreadzie).
 - 4) Fractional Kelly Sizer: Dynamiczne skalowanie ryzyka (0.75% - 2.0% kapitalu) na podstawie skalibrowanej skutecznosci z self_learning_loop_mod.py.
 - KRYTERIUM AKCEPTACJI: Kazdy modul wdrazany osobno (1 sesja = 1 modul) i zatwierdzany wylacznie po przejsciu walk_forward_mod.py (OOS > baza, Monte Carlo >= 85%) oraz python smart_verify.py.
+- 4) Asymmetric Tail Correlation: Osobne liczenie korelacji i Bety dla swiec spadkowych BTC (Downside Beta - tarcza dla LONG) oraz wzrostowych BTC (Upside Beta - wybor lidera o najwyzszej dynamice).
