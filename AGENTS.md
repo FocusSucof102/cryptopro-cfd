@@ -13,3 +13,9 @@
 7. **Synchronizacja Git:** `git pull --rebase origin main` przed zadaniem; po PASS `smart_verify.py` → `git add`, `commit`, `push origin main`.
 n## 7. POLITYKA LIMITOW AI (OD 01.12.2026)n- Uzywaj lekkich modeli (Gemini Flash standard) i pracuj przyrostowo (1 modul na sesje).n- Tryby High/Sonnet uruchamiaj max 1x w tygodniu do przegladu calibration_summary.json.
 
+
+## 8. PROTOKOL TURBO-SPEED I ZERO-ERROR (OSZCZEDZANIE LIMITOW AI)
+1. ZAKAZ WIELOLINIOWYCH SKRYPTOW W POWERSHELL/TELEGRAM: Generuj wylacznie jednoliniowe komendy lub krotkie prompty bez zagniezdzonych cudzyslowow.
+2. PODZIAL ROL: Telefon (Termux) zapisuje wylacznie dane (*.json), Laptop/IDE modyfikuje wylacznie kod (*.py, *.md). Zawsze uzywaj git pull --rebase --autostash.
+3. ATOMOWE ZADANIA: 1 sesja AI = 1 konkretny modul na lekkim modelu (Gemini Flash standard). Tryby High/Sonnet max 1x/tydzien.
+4. AKTUALIZACJA TESTOW: Kazda zmiana logiki w rdzeniu musi od razu aktualizowac odpowiadajacy test w self_test.py przed uruchomieniem smart_verify.py.
