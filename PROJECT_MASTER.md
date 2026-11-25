@@ -117,3 +117,9 @@ n## ROADMAPA OD 01.12.2026: SAMOUCZACA SIE PETLA PREDYKCJI (SELF-CALIBRATING ENG
 2. PODZIAL ROL: Telefon (Termux) zapisuje wylacznie dane (*.json), Laptop/IDE modyfikuje wylacznie kod (*.py, *.md). Zawsze uzywaj git pull --rebase --autostash.
 3. ATOMOWE ZADANIA: 1 sesja AI = 1 konkretny modul na lekkim modelu (Gemini Flash standard). Tryby High/Sonnet max 1x/tydzien.
 4. AKTUALIZACJA TESTOW: Kazda zmiana logiki w rdzeniu musi od razu aktualizowac odpowiadajacy test w self_test.py przed uruchomieniem smart_verify.py.
+
+### 5. ROZSZERZENIE KORELACJI: LEAD-LAG, DECOUPLING I CLUSTER RISK CAP (po 01.12.2026)
+- 1) Lead-Lag Alpha: Wykrywanie opoznionych tokenow w klastrze (r > 0.80), gdy lider (BTC/SOL) juz ruszyl.
+- 2) Decoupling Detector: Wyroznianie tokenow odpornych na spadki BTC (r < 0.30 + wysoki wolumen) jako niezaleznych okazji ALFA.
+- 3) Cluster Risk Cap: Zamiast calkowitej blokady CORR!, dzielenie limitu ryzyka klastra ($3.00) po polowie ($1.50 + $1.50) miedzy 2 najsilniejsze setupy z tego samego klastra.
+- KRYTERIUM AKCEPTACJI: Walidacja w walk_forward_mod.py (OOS > baza, Monte Carlo >= 85%) + python smart_verify.py.
