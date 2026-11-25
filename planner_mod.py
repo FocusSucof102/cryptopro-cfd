@@ -86,3 +86,55 @@ def calc_plan(ex, sym, capital, risk_pct, max_lev, entry=None, stop=None, side=N
         "min_cap": min_cap_needed, "rec_lev": rec_lev, "safe_ceil": safe_ceil, "rec_margin": rec_margin, "liq_price": liq_price, "stop_pct": stop_pct, "lev_grade": lev_grade, "dev_pct": dev_pct, "max_dev": max_d,
         "passed": passed, "checks": checks
     }
+
+def calc_bitbase_plan(entry, stop, side, capital, max_lev=1000, risk_pct=1.5, atr_value=None):
+    """Wylicza plan BitBase: SL w ATR, ryzyko, bezpieczna dzwignia i trzy cele z podzialem pozycji."""
+    entry, stop, capital = float(entry), float(stop), float(capital)
+    if not all(math.isfinite(value) for value in (entry, stop, capital)):
+        return None
+    if entry <= 0 or stop <= 0 or entry == stop or capital <= 0:
+        return None
+    direction = str(side).upper()
+    if direction not in ("LONG", "SHORT"):
+        return None
+    td = 1 if direction == "LONG" else -1
+    stop_dist = abs(entry - stop)
+    stop_pct = stop_dist / entry * 100.0
+    if stop_pct > 2.2:
+        return None
+    sl_atr = None
+    if atr_value is not None:
+        atr_value = float(atr_value)
+        if not math.isfinite(atr_value) or atr_value <= 0:
+            return None
+        sl_atr = stop_dist / atr_value
+        if not 1.2 <= sl_atr <= 1.6:
+            return None
+    risk_budget = capital * (float(risk_pct) / 100.0)
+    fee_slip = ((cp.FEE_SIDE_PCT / 100.0) + (cp.SLIPPAGE_BPS / 10000.0)) * (entry + stop)
+    risk_per_unit = stop_dist + fee_slip
+    if risk_budget <= 0 or risk_per_unit <= 0 or stop_pct <= 0:
+        return None
+
+    qty = risk_budget / risk_per_unit
+    notional = qty * entry
+    max_safe_lev = max(1, int(50.0 / stop_pct))
+    leverage = min(max(1, int(max_lev)), max_safe_lev)
+    margin = notional / leverage
+    targets = [round(entry + td * stop_dist * multiple, 6) for multiple in (0.75, 1.5, 2.5)]
+    return {
+        "side": direction,
+        "entry": entry,
+        "stop": stop,
+        "targets": targets,
+        "target_splits": [50, 30, 20],
+        "qty": round(qty, 6),
+        "notional": round(notional, 2),
+        "risk_usdt": round(qty * risk_per_unit, 2),
+        "risk_pct": float(risk_pct),
+        "leverage": leverage,
+        "max_safe_lev": max_safe_lev,
+        "margin": round(margin, 2),
+        "sl_pct": round(stop_pct, 3),
+        "sl_atr": round(sl_atr, 3) if sl_atr is not None else None,
+    }

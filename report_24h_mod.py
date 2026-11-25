@@ -3,6 +3,7 @@ from datetime import datetime
 
 STATE_24H = "sprint_24h_state.json"
 DECISIONS_LOG = "ai_decisions_log.json"
+TG_CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tg_config.json")
 
 def log_ai_decision(module_name, action, reason, details=""):
     """Zapisuje kazda autonomiczna decyzje AI (co zmienil i dlaczego) do dziennika 24H."""
@@ -41,7 +42,7 @@ def check_and_build_24h_report(cp_mod, force=False):
         except Exception: pass
     subprocess.run(["termux-media-scan", "/storage/emulated/0/Download/raport_24h_dla_ai.txt"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
-        tc = json.load(open("tg_config.json", encoding="utf-8"))
+        tc = json.load(open(TG_CONFIG_FILE, encoding="utf-8-sig"))
         tok, cid = tc.get("token", "").strip(), tc.get("chat_id", "").strip()
         if tok and cid and os.path.exists("raport_24h_dla_ai.txt"):
             import requests

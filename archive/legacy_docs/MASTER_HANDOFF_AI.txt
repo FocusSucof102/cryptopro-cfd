@@ -1,0 +1,60 @@
+====================================================================
+CRYPTOPRO CFD PRO+ (BITBASE FUTURES) — PEŁNY STAN SYSTEMU I HANDOFF AI
+Data zapisu: 21.11.2026 | Cel główny: 10 000 000 PLN (bezpieczny wzrost)
+====================================================================
+
+1. ARCHITEKTURA PROJEKTU I PLIKI (REPOZYTORIUM: FocusSucof102/cryptopro-cfd)
+- crypto_pro.py: Główny silnik skanujący i egzekucyjny (15m/1H/4H, poziomy 48H, formacje Pinbar/Engulfing, Sniper Mode BTC < EMA200, obsługa Telegrama i zarządzanie kapitałem).
+- alpha_pro_mod.py: Skaner TOP-100 par USDT-Futures z Bitget (pobieranie płynnych par, filtry wolumenu i spready).
+- smart_sl_mod.py: Dynamiczne zarządzanie pozycją (obecnie przesuwa SL na Break-Even +0.12R po osiągnięciu +1.0R; do aktualizacji na BE +0.35R po +1.1R).
+- future_quantum_mod.py: Moduły filtrujące:
+  * calc_shannon_entropy(sub) — entropia Shannona (szum rynku).
+  * detect_whale_iceberg_and_redteam(side, sub) — wykrywanie ukrytych ścian wielorybów i pułapek Red-Team.
+- quantum_nash_mod.py: Teoria gier i mikrostruktura:
+  * detect_nash_predator_trap(side, sub) — wykrywanie polowania na Stop Lossy (równowaga Nasha).
+  * quantum_wave_interference(...) — interferencja falowa poziomów.
+- quant_edge_pro_mod.py:
+  * profile_coin_fingerprint(sub) — indywidualny profil zmienności każdej monety (mnożnik SL).
+- walk_forward_mod.py: Bezlitosny sędzia statystyczny:
+  * run_purged_walk_forward(trades) — podział na In-Sample (70%) i Out-of-Sample (30%) z przerwą czasową (Purge), odjęcie prowizji BitBase (-0.07R na transakcję).
+  * run_monte_carlo_stress(trades) — 100 losowych przetasowań kolejności transakcji (próg zdawalności: >= 85%).
+- nzt48_cortex.py: Moduł uczenia na odrzuconych hipotezach (analizuje, czy odrzucone sygnały faktycznie by straciły).
+- smart_verify.py: Bramka jakości QA 5.0 PRO+ (audyt składni, zakazanych wywołań i reguł z AGENTS.md).
+
+2. TWARDE REGUŁY BIZNESOWE I OGRANICZENIA ŚRODOWISKOWE
+- Koszt transakcyjny: Prowizja + poślizg BitBase Futures wynosi zawsze -0.07R na transakcję (musi być odejmowana w każdej symulacji!).
+- Poziomy sygnałów: SILVER (58%-64%), GOLD (65%-74%), PLATINUM (75%+). Obecny próg alertów: >= 58% (SILVER+).
+- Zakaz przerywania Sprintu 24H: Od 21.11.2026 godz. 12:13 trwa żywy 24-godzinny test zbierający próbki LIVE_FORWARD, Wild Lab (61-160), Micro Lab (161+) i NZT-48 Cortex. Zakończenie: 22.11.2026 godz. 12:13 (wygeneruje automatyczny plik raport_24h_dla_ai.txt).
+- Chmura GitHub Codespaces: Nazwa maszyny to 'ominous-space-train-77xqr6vjw6rxhr464'. Używać wyłącznie przez SSH z Termuxa ('gh codespace ssh -c ominous-space-train-77xqr6vjw6rxhr464') i ZAWSZE zatrzymywać po pracy ('gh codespace stop -c ominous-space-train-77xqr6vjw6rxhr464'), aby oszczędzać limit 60h/mies.
+
+3. TWARDE WYNIKI BADAŃ Z CHMURY (21.11.2026 — 31 PAR, 6200 ŚWIEC 15m)
+- Badanie A (Ślepy trend EMA20 > EMA50 bez AI):
+  * Wynik OOS: -24.75R | Win Rate: 21.8% | Monte Carlo: 0.0% pass (OBLANY).
+- Badanie B (Trend + Sniper BTC + Moduły AI + stary próg BE +0.12R):
+  * Wynik OOS: -3.23R | Win Rate: 52.4% | Monte Carlo: 1.0% pass (OBLANY — BE +0.12R po odjęciu prowizji -0.07R daje tylko +0.05R, co nie pokrywa strat -1.07R).
+- Badanie C (Zwycięzca: Odbicie od Poziomu 48H + Sniper BTC + Moduły AI + nowy próg BE +0.35R po +1.1R):
+  * Wynik OOS: +4.47R (NETTO po prowizji!) | Win Rate: 66.7% | Monte Carlo: 96.0% pass | Max DD: tylko 3.55R (ZALICZONY).
+- Badanie D (Wpływ pojedynczych modułów AI):
+  * Whale Iceberg / Red-Team: przepuszcza 100% dobrych wejść (OOS +1.93R, Monte Carlo 100% pass) -> ZOSTAWIĆ JAKO TWARDY FILTR.
+  * Nash Predator Trap: przepuszcza 100% dobrych wejść (OOS +1.93R, Monte Carlo 100% pass) -> ZOSTAWIĆ JAKO TWARDY FILTR.
+  * Shannon Entropy: jako twardy bloker odrzuca aż 87.5% wejść na 15m (zredukował próbki z 16 do 2) -> ZMIENIĆ Z TWARDEGO BLOKERA NA MIĘKKĄ WAGĘ PUNKTOWĄ W META-BRAIN.
+
+4. CO JEST JUŻ WDROŻONE, A CO DO WDROŻENIA JUTRO (22.11.2026 PO 12:13)
+[WDROŻONE]:
+- Skaner TOP-100 par USDT-Futures + Sniper Mode BTC + Auto-Tuner (próg 58% SILVER+).
+- Zapis stanu i wniosków badawczych na GitHubie (AI_SESSION_STATE.md) oraz zatrzymanie maszyny Codespaces.
+[DO WDROŻENIA JUTRO PO ODEBRANIU raport_24h_dla_ai.txt]:
+1. Aktualizacja smart_sl_mod.py: Zmiana progu Break-Even z +0.12R na +0.35R po osiągnięciu +1.1R zysku.
+2. Aktualizacja crypto_pro.py / future_quantum_mod.py: Zamiana calc_shannon_entropy z twardego blokera na miękką korektę punktową w Meta-Brain (utrzymanie twardego weto tylko dla Whale Iceberg i Nash Predator Trap).
+3. Dokonczenie lekkiego Agenta Ewolucji AI (ai_evolution_agent.py):
+   - DLACZEGO DZIŚ NIE PRZESZŁO: Narzędzie Gemini CLI zjada ok. 250 000 tokenów na start (czyta całe repozytorium) i wyczerpało dzienny limit darmowego klucza GEMINI_API_KEY.
+   - ROZWIĄZANIE NA JUTRO: Bezpośredni skrypt Pythona wywołujący REST API 'gemini-2.5-flash' z Google Search Grounding (zużycie < 3000 tokenów/cykl = kilkaset darmowych cykli dziennie!).
+   - WYMAGANIA AGENTA:
+     * Przed każdą zmianą robi kopię zapasową w folderze 'evolution_backups/' (z datą i godziną).
+     * Eksperymentuje na parametrach (tuner_state.json, meta_brain_weights.json) i przeszukuje internet, ale wdraża zmianę WYŁĄCZNIE po przejściu egzaminu in walk_forward_mod.py (OOS > obecny rekord oraz Monte Carlo >= 85%). Nigdy nie edytuje bezpośrednio rdzenia crypto_pro.py bez izolowanego testu sandbox.
+     * Zapisuje każdy cykl (zarówno wdrożony, jak i odrzucony — jako pamięć negatywną) do pliku AI_EVOLUTION_LOG.md na GitHubie z pełną adnotacją: KTO, CO, JAK i DLACZEGO.
+     * Wysyła powiadomienie na Telegrama po każdym cyklu (czy wprowadzono zmiany, czy odrzucono po testach).
+
+5. INSTRUKCJA STARTU DLA DOWOLNEGO AI W NOWYM OKNIE ROZMOWY:
+"Przeczytaj plik MASTER_HANDOFF_AI.txt oraz raport_24h_dla_ai.txt. Na podstawie zawartych tam wyników badań (BE +0.35R, miękka waga Entropy) oraz danych z żywego Sprintu 24H wdróż poprawki, zweryfikuj przez smart_verify.py i uruchom lekkiego Agenta Ewolucji ai_evolution_agent.py zgodnego z punktem 4."
+====================================================================

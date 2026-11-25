@@ -5,7 +5,9 @@ JSON_DEFAULTS = {
     "active_positions.json": [], "module_heartbeats.json": {}, "bitbase_blacklist.json": [],
     "market_shadow_lab.json": [], "wild_market_lab.json": [], "micro_market_lab.json": [],
     "qa_health_history.json": [], "evolution_champion.json": {}, "meta_brain_weights.json": {},
-    "nzt_synapses.json": {}, "ai_decisions_log.json": [], "funnel_stats.json": {}
+    "nzt_synapses.json": {}, "ai_decisions_log.json": [], "funnel_stats.json": {},
+    "risk_config.json": {"capital_usdt": 200.0, "risk_pct": 1.0, "max_drawdown_pct": 6.0, "current_drawdown_pct": 0.0, "safe_lock_active": False},
+    "time_decay_state.json": {"active": False, "cutoff_minutes": 360, "verdict": "KEPT_AS_RESEARCH"}
 }
 
 ALIAS_IMPORTS = {
@@ -13,7 +15,8 @@ ALIAS_IMPORTS = {
     "sam": "import session_analytics_mod as sam", "sdm": "import sniper_doctor_mod as sdm", "ssl": "import smart_sl_mod as ssl",
     "iom": "import inst_orderflow_mod as iom", "aqm": "import ai_quant_mod as aqm", "elm": "import evolution_lab_mod as elm",
     "fqm": "import future_quantum_mod as fqm", "qnm": "import quantum_nash_mod as qnm", "qep": "import quant_edge_pro_mod as qep",
-    "mbm": "import meta_brain_mod as mbm", "nzt": "import nzt_cortex_mod as nzt", "r24": "import report_24h_mod as r24"
+    "mbm": "import meta_brain_mod as mbm", "nzt": "import nzt_cortex_mod as nzt", "r24": "import report_24h_mod as r24",
+    "rgm": "import risk_guard_mod as rgm", "tdm": "import time_decay_mod as tdm", "orch": "import orchestrator as orch"
 }
 
 def heal_python_file(fn):

@@ -1,6 +1,13 @@
-# 🎯 CEL PROJEKTU I INSTRUKCJA DLA AGENTA AI (CRYPTO PRO CFD)
-1. **Cel główny:** Autonomiczny system analityczno-egzekucyjny pod handel **BitBase Futures / CFD** (dane z Bitget USDT-Futures), maksymalizujący zysk netto w `R` po prowizji (`-0.07R` na transakcję) przy ścisłej ochronie kapitału.
-2. **Obowiązkowy kontekst:** Przed każdą zmianą przeczytaj `README.md`, `CHANGELOG.md` oraz `AI_SESSION_STATE.md`. Nigdy nie ujawniaj tokenów/kluczy i nie przywracaj zablokowanych API (Binance/Bybit jako główne źródło).
-3. **Pętla testów i auto-korekty:** Po każdej modyfikacji uruchom `python smart_verify.py` (QA 5.0 PRO+ AST/Scope-Guard). Jeśli wystąpi błąd, zastosuj **Zasadę Podwójnej Naprawy**: napraw kod ORAZ dopisz regułę samoleczenia do `auto_repair_mod.py`.
-4. **Kierunek rozwoju:** Analizuj wyniki z `raport_24h_dla_ai.txt`, `meta_brain_weights.json`, `nzt_synapses.json` i `funnel_stats.json`, wzmacniając moduły o najwyższym dodatnim `net_r` i eliminując filtry generujące fałszywe odrzucenia.
-5. **Synchronizacja Git i wersjonowanie:** Przed każdym zadaniem zawsze wykonaj `git pull --rebase origin main`, a po każdym zakończonym teście `smart_verify.py` automatycznie wykonaj `git add`, `git commit` oraz `git push origin main`.
+# 🎯 AGENTS.md — INSTRUKCJA I ZASADY SYSTEMOWE DLA AGENTÓW AI
+1. **Single Source of Truth:** Jedynym źródłem wiedzy jest `PROJECT_MASTER.md`. Przed zmianą przeczytaj `PROJECT_MASTER.md`, `README.md`, `CHANGELOG.md`.
+2. **Cel:** Autonomiczny system CFD/Futures (BitBase Futures, dane Bitget USDT-Futures TOP-60 >10M$), maksymalizujący zysk netto po prowizji `-0.07R` na transakcję.
+3. **Pakt Obostrzeń & DevSecOps:** Nigdy nie ujawniaj tokenów/kluczy (`tg_config.json`, `active_positions.json` chronione). Nie przywracaj giełd spotowych ani zablokowanych API (Binance/Bybit).
+4. **Zasada Podwójnej Naprawy:** Po zmianie uruchom `smart_verify.py` (QA 5.0 PRO+ AST/Scope-Guard). Błąd = napraw kod + dopisz regułę do `auto_repair_mod.py`.
+5. **Standard Specyfikacji Inżynieryjnej:**
+   - Każda funkcja: docstring + AST Scope-Guard + Call-Guard + brak NameError.
+   - Wdrożenie: test `walk_forward_mod.py` (OOS > baza, Monte Carlo >= 85%).
+   - Filtry: `STABLECOIN_BLACKLIST`, sesja londyńska (+10 pkt, EMA200 1H), Safe-Lock (DD >= 6% -> PLATINUM >= 68%), BE +0.35R po +1.1R.
+6. **Mapa Archiwum (`archive/`):**
+   - `legacy_code/`: `collector.py`, `scanner.py`, `system.py`, `dashboard.py`, `backtest.py` (referencja/badania).
+   - `legacy_docs/`: `MASTER_HANDOFF_AI.txt`, `AI_SESSION_STATE.md`, `EVOLUTION_JOURNAL.md` (scalone w PROJECT_MASTER).
+7. **Synchronizacja Git:** `git pull --rebase origin main` przed zadaniem; po PASS `smart_verify.py` → `git add`, `commit`, `push origin main`.

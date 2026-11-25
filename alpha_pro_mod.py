@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 SESS = requests.Session()
 CACHE_DERIV = {}
 BTC_24H_RET = {"ts": 0, "ret": 0.0}
+STABLECOIN_BLACKLIST = {"BFUSD", "USDC", "USD1", "RLUSD", "FDUSD", "DAI", "TUSD", "USDE", "USDD", "PYUSD", "EURC"}
 
 def get_btc_24h_return(cp):
     """Oblicza zwrot BTC (24h) z cache 3 min. Parametry: cp."""
@@ -159,12 +160,15 @@ def get_cfd_top60_symbols():
         rows = []
         for it in r.get("data", []):
             sym = it.get("symbol", "")
+            base = sym.replace("USDT", "")
+            if base in STABLECOIN_BLACKLIST or any(sb == base for sb in STABLECOIN_BLACKLIST):
+                continue
             vol_u = float(it.get("usdtVolume", 0) or 0)
             if sym.endswith("USDT") and vol_u >= 3000000:
                 rows.append((sym, vol_u))
         rows.sort(key=lambda x: -x.__getitem__(1))
         if len(rows) >= 25:
-            syms = [x.__getitem__(0) for x in rows.__getitem__(slice(0, 100))]
+            syms = [x.__getitem__(0) for x in rows.__getitem__(slice(0, 100)) if not any(x.__getitem__(0).startswith(sb) for sb in STABLECOIN_BLACKLIST)]
             CACHE_TOP60.update({"ts": now, "syms": syms})
             return syms
     except Exception:

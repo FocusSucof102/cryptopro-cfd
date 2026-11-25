@@ -1,5 +1,19 @@
 # 📜 PEŁNA HISTORIA ZMIAN (CHANGELOG) — CRYPTO PRO CFD
 
+## 2026-11-25 — BitBase signal plan, alerts and position tracking
+- Add `USD1` to the stablecoin blacklist and align console/Telegram status colors with signal groups.
+- Add a BitBase-only 1.5% risk plan with 1.2–1.6 ATR stops capped at 2.2%, safe leverage/margin, and 0.75R/1.5R/2.5R targets split 50/30/20.
+- Reject invalid SL ranges in the standalone BitBase planner, test both ATR boundaries and the 2.2% cap, and mark `OBSTAWIONE` positions green in the console.
+- Limit automatic Live entry alerts to new, price-valid Group A setups; add plan fields and post-obstawiłem confirmation/edit buttons.
+- Add validated `/edytuj SYMBOL entry=... sl=... tp1=... tp2=... tp3=...` storage in `user_overrides.json`, separate outcome comparison, and twice-daily summaries.
+- Restrict position-management warnings to `OBSTAWIONE`, add MFE giveback warnings, and report a historical pattern match only after five comparable closed samples.
+- Extend `self_test.py` with deterministic tests for the BitBase plan, blacklist, pattern matching, and edit validation.
+
+## 2026-11-25 — Telegram listener diagnostics
+- Resolve active Telegram config reads beside their modules, start the listener before context generation completes, and report errors with the token redacted.
+- Start the Telegram listener at the entrypoint before background workers and before selecting menu or Live mode.
+- Handle `/status`, `/pause`, `/obstaw`, `/edytuj`, `/start`, and `/menu` directly in the update loop, filter incoming messages by configured chat ID, and share local portfolio tracking between `/obstaw` and its inline callback.
+
 ## Etap 1: Fundament i Stabilizacja Środowiska Termux + Web + Telegram
 - Przeniesienie skanera wyłącznie na płynne kontrakty Futures/CFD (**BITGET USDT-FUTURES**), odcięcie zablokowanych lub mało płynnych giełd spotowych.
 - Rozwiązanie problemu `EOFError` przy uruchamianiu w tle (`nohup`) oraz eliminacja podwójnych procesów w `CryptoPro_Start.sh`.

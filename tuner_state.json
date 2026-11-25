@@ -7,6 +7,12 @@
     "GOLD",
     "SILVER"
   ],
+  "london_hours": [
+    8,
+    13
+  ],
+  "london_prob_boost": 10,
+  "london_ema200_1h_required": true,
   "last_tune_ts": 1795381131.9394271,
-  "notes": "[22.11] Odblokowano lejek + BE+0.35R + miekka waga Entropy (champion +46.8R)"
+  "notes": "[24.11] Wdrozenie pakietu 24H: Filtr sesji londynskiej (+10 pkt & 1H EMA200), Safe-Lock 6% DD, STABLECOIN_BLACKLIST, Time-Decay Exit"
 }

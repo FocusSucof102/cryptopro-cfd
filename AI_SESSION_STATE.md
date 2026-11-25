@@ -1,20 +1,11 @@
-# 🧠 ŻYWA PAMIĘĆ SESJI AI
-*Aktualizacja: 2026-11-21 12:17:54*
+# ARCHIVE: Plik przeniesiony do archive/legacy_docs/AI_SESSION_STATE.md
+# Głównym i jedynym źródłem wiedzy jest PROJECT_MASTER.md.
 
-## 🛡️ PAKT OBOSTRZEŃ + ZASADA PODWÓJNEJ NAPRAWY:
-- Wszystkie obostrzenia wpisane do `README.md` i `CHANGELOG.md`.
-- Odblokowano przepływ TOP-100 (`4H+1H`, strefa `1.8 ATR`) i uruchomiono czysty Sprint 24H.
+## Bieżące uzupełnienie — 2026-11-25
+- Pakiet BitBase uzupełniony w skanerze, plannerze, Telegramie i monitorze portfela; szczegóły i rozdzielenie ryzyka ogólnego od ryzyka BitBase są w `PROJECT_MASTER.md`.
+- Testy `smart_verify.py`, `self_test.py` i walk-forward należy uruchomić przed uznaniem wdrożenia za zweryfikowane.
 
-## 🧪 Wynik Walk-Forward & Monte Carlo (21.11.2026):
-- Poziom 48H + Sniper BTC + Moduly AI + BE +0.35R (po +1.1R): OOS +4.47R, WR 66.7%, Monte Carlo 96.0% pass (Max DD 3.55R). Wdrozyc BE +0.35R po zakonczeniu biezacego Sprintu 24H.
-
-- Test 3-in-1 (21.11.2026): Whale Iceberg oraz Nash Predator Trap przepuszczaja 100% dobrych wejsc (OOS +1.93R, Monte Carlo 100% pass), natomiast Shannon Entropy jako twardy bloker odrzuca 87.5% wejsc na 15m -> zamienic Entropy na miekka wage punktowa zamiast twardego weto po zakonczeniu Sprintu 24H.
-
-## 📊 Dodatkowe Badania Walk-Forward (TP / SL / Sesje):
-- TP_1.8R: OOS=+1.73R | WR=100.0% | MC=100% (DD:3.4R)
-- TP_2.0R: OOS=+1.93R | WR=100.0% | MC=100% (DD:3.4R)
-- TP_2.5R: OOS=+2.43R | WR=100.0% | MC=100% (DD:3.5R)
-- TP_3.0R: OOS=+2.93R | WR=100.0% | MC=100% (DD:3.6R)
-- SL_1.5ATR: OOS=+1.93R | WR=100.0% | MC=100% (DD:4.5R)
-- SL_2.2ATR: OOS=+1.93R | WR=100.0% | MC=100% (DD:4.8R)
-- EU_US_ONLY: OOS=+1.93R | WR=100.0% | MC=100% (DD:3.4R)
+## Audyt BitBase — 2026-11-25
+- Audyt wskazał pełną blacklistę, formatowanie sygnałów, plan 1.5% ryzyka z trzema TP (50/30/20), izolację edycji w `user_overrides.json`, podsumowania 08:00/20:00, ostrzeżenia tylko dla pozycji `OBSTAWIONE` i dopasowanie wzorców po minimum pięciu zamkniętych próbkach.
+- Uzupełniono walidację standalone plannera dla granic SL 1.2–1.6 ATR i limitu 2.2%; dodano test obu granic ATR oraz zieloną etykietę `OBSTAWIONE` w konsolowym widoku portfela.
+- Weryfikacja pozostaje NIEPOTWIERDZONA: wywołania `smart_verify.py` i `self_test.py` zwróciły kod 0, ale pusty stdout, a `qa_health_history.json` nie zawiera nowego wpisu. VS Code Testing nie wykrył testów w `self_test.py`, Pylance runtime widział nieaktualną kopię źródła; kontrola składni Pylance dla zmienionych plików Python nie wykazała błędów. Nie raportować PASS, dopóki oba skrypty nie zostaną wiarygodnie uruchomione w terminalu tego workspace.

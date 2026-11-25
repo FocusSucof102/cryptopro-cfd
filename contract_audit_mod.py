@@ -5,6 +5,7 @@
 #    NATYCHMIAST ostrzez uzytkownika (gdzie i co wycieklo).
 # 3. ARCHITEKTURA: API Bitget USDT-FUTURES -> gra uzytkownika na BitBase Futures.
 # ==============================================================================
+import json
 import requests
 
 CHAIN_NAMES = {
@@ -16,6 +17,18 @@ DEX_TO_GOPLUS = {
     "base": "8453", "optimism": "10", "avalanche": "43114", "solana": "solana"
 }
 
+def safe_fetch_json(url, headers=None, timeout=6):
+    """Bezpiecznie pobiera i parsuje odpowiedz JSON z API, chroniac przed pustym statusem i bledami skladni."""
+    try:
+        resp = requests.get(url, headers=headers, timeout=timeout)
+        if not resp or not resp.text or not resp.text.strip():
+            return None, "Pusta odpowiedź API (Empty Response)"
+        return resp.json(), ""
+    except Exception as exc:
+        if "Expecting value" in str(exc) or isinstance(exc, getattr(json, "JSONDecodeError", Exception)):
+            return None, "Nieprawidłowy format JSON / brak danych (Expecting value: line 1 column 1)"
+        return None, f"Błąd połączenia API: {exc}"
+
 def audit_token_contract(symbol_or_ticker):
     """Audytuje smart-kontrakt przez DexScreener i GoPlus API. Parametry: symbol_or_ticker."""
     clean = str(symbol_or_ticker).upper().replace("USDT", "").replace("PERP", "").strip()
@@ -25,7 +38,10 @@ def audit_token_contract(symbol_or_ticker):
     headers = {"User-Agent": "Mozilla/5.0 CryptoProAudit/1.0"}
     try:
         # Krok 1: Wyszukanie adresu kontraktu i sieci przez DexScreener
-        ds = requests.get("".join(["https://dexscreener.com", "/latest/dex/search?q=", clean]), headers=headers, timeout=6).json()
+        ds_url = "".join(["https://dexscreener.com", "/latest/dex/search?q=", clean])
+        ds, err_ds = safe_fetch_json(ds_url, headers=headers, timeout=6)
+        if not ds:
+            return f"🛡️ <b>AUDYT ({clean}):</b> {err_ds}"
         pairs = ds.get("pairs") or []
         best_p = None
         for p in pairs:
@@ -48,7 +64,9 @@ def audit_token_contract(symbol_or_ticker):
         else:
             gp_url = "".join(["https://gopluslabs.io", "/api/v1/token_security/", gp_chain, "?contract_addresses=", addr])
 
-        gp = requests.get(gp_url, headers=headers, timeout=7).json()
+        gp, err_gp = safe_fetch_json(gp_url, headers=headers, timeout=7)
+        if not gp:
+            return f"🛡️ <b>AUDYT ({clean} | {CHAIN_NAMES.get(gp_chain, chain_dex)}):</b> Kontrakt <code>{addr[:8]}...{addr[-6:]}</code> | Płynność DEX: <b>${liq_usd:,.0f}</b> ({err_gp})."
         res_map = gp.get("result") or {}
         info = res_map.get(addr.lower()) or res_map.get(addr) or {}
         if not info:

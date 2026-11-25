@@ -39,17 +39,24 @@ def save_positions(lst):
     """Realizuje logike: save positions. Parametry: lst."""
     json.dump(lst, open(POS_FILE, "w"), indent=2)
 
-def add_position(ex, sym, side, entry, stop, tp_list, qty, margin, risk_usdt, lev):
-    """Realizuje logike: add position. Parametry: ex, sym, side, entry, stop, tp_list, qty, margin, risk_usdt, lev."""
+def add_position(ex, sym, side, entry, stop, tp_list, qty, margin, risk_usdt, lev, tracked_as="OBSTAWIONE"):
+    """Adds a tracked position with optional OBSTAWIONE state and target weights."""
     lst = load_positions()
     pid = f"{sym}_{int(time.time())}"
+    tp_count = len(tp_list)
+    if tp_count == 3:
+        tp_r, tp_weights = [0.75, 1.5, 2.5], [0.50, 0.30, 0.20]
+    else:
+        tp_r = [float(index + 1) for index in range(tp_count)]
+        tp_weights = [1.0 / max(1, tp_count)] * tp_count
     lst.append({
         "id": pid, "exchange": ex, "symbol": sym, "side": side,
         "entry": round(float(entry), 6), "stop": round(float(stop), 6),
         "tp": [round(float(x), 6) for x in tp_list],
+        "tp_r": tp_r, "tp_weights": tp_weights, "tracked_as": tracked_as,
         "qty": float(qty), "margin": round(float(margin), 2),
         "risk": round(float(risk_usdt), 2), "lev": int(lev),
-        "hit_tps": [False, False, False, False, False]
+        "hit_tps": [False] * tp_count
     })
     save_positions(lst)
     return pid
@@ -59,11 +66,12 @@ def toggle_tp_hit(pid, tp_idx):
     lst = load_positions()
     cfg = cp.load_settings()
     for p in lst:
-        if p["id"] == pid and 0 <= tp_idx < 5:
+        if p["id"] == pid and 0 <= tp_idx < len(p.get("hit_tps", [])):
             was_hit = p["hit_tps"][tp_idx]
             p["hit_tps"][tp_idx] = not was_hit
-            # Kazdy cel R to 1/5 pozycji z zyskiem (tp_idx + 1) * (risk / 5)
-            pnl_part = round((p["risk"] / 5.0) * (tp_idx + 1), 2)
+            weights = p.get("tp_weights", [1.0 / max(1, len(p["hit_tps"]))] * len(p["hit_tps"]))
+            multiples = p.get("tp_r", [float(index + 1) for index in range(len(p["hit_tps"]))])
+            pnl_part = round(p["risk"] * weights[tp_idx] * multiples[tp_idx], 2)
             if not was_hit:
                 cfg["capital"] = round(cfg["capital"] + pnl_part, 2)
             else:
@@ -112,6 +120,8 @@ def check_positions_guardian():
     if not lst: return
     changed = False
     for p in lst:
+        if p.get("tracked_as") != "OBSTAWIONE":
+            continue
         ex, sym, side = p["exchange"], p["symbol"], p["side"]
         ta = cp.cm.full_analysis(ex, sym) if hasattr(cp, "cm") else None
         if not ta: continue
@@ -124,27 +134,28 @@ def check_positions_guardian():
         # Analiza zagrozen i przeciwdzialan
         threats, actions = [], []
         sl_dist_total = abs(entry - stop) or 1e-9
+        cur_r = (td * (cur - entry)) / sl_dist_total
+        p["mfe_r"] = max(float(p.get("mfe_r", 0.0)), cur_r)
+        if p["mfe_r"] >= 1.1 and p["mfe_r"] - cur_r >= 0.65:
+            threats.append(f"⚠️ PROFIT_DECAY_WARN: cofnięcie {p['mfe_r'] - cur_r:.2f}R od MFE {p['mfe_r']:.2f}R")
+            actions.append("Rozważ realizację części zysku i ochronę pozostałej pozycji.")
         age_h = (time.time() - p.get("opened_ts", time.time())) / 3600.0
         if age_h >= 36.0 and ((td * (cur - entry)) / sl_dist_total) < 1.0:
             threats.append(f"⏱️ TIME-STOP CFD ({round(age_h,1)}h < +1R) — uniknij oplaty swap!")
             actions.append("Zamknij pozycje CFD po czasie i zwolnij margin pod szybszy impuls.")
-        cur_r = (td * (cur - entry)) / sl_dist_total
         atr_1h = ta.get("atr", sl_dist_total * 0.6)
-        if cur_r >= 1.5:
+        be_035_stop = round(entry + td * 0.35 * sl_dist_total, 6)
+        if cur_r >= 1.1 and not p.get("be_035_active", False) and td * (be_035_stop - stop) > 0:
+            p["stop"] = stop = be_035_stop
+            p["be_035_active"] = True
+            threats.append(f"🛡️ SL przesunięty na +0.35R ({cp.fmt_p(stop).strip()})")
+            actions.append("Zabezpiecz pozycję; pierwsza połowa realizacji po TP1.")
+        elif cur_r >= 1.5:
             new_sl = round(cur - td * 2.5 * atr_1h, 6)
             if (td == 1 and new_sl > stop) or (td == -1 and new_sl < stop):
                 p["stop"] = stop = new_sl
                 threats.append(f"📈 TRAILING STOP NA {cp.fmt_p(stop).strip()} (+{round(cur_r,1)}R)")
                 actions.append("Zaktualizuj SL na gieldzie do poziomu kroczacego.")
-        elif cur_r >= 1.5 and not p.get("half_tp_15", False):
-            p["half_tp_15"] = True
-            p["stop"] = stop = round(entry + td * 0.1 * sl_dist_total, 6)
-            threats.append(f"⚡ CFD +1.5R! SL na BE+ ({cp.fmt_p(stop).strip()}) — mozesz dolozyc piramide +1.0R z zysku!")
-            actions.append("Zamknij polowe pozycji z zyskiem i przesun SL na +0.1R (transakcja bez ryzyka).")
-        elif cur_r >= 1.0 and ((td == 1 and stop < entry) or (td == -1 and stop > entry)):
-            p["stop"] = stop = entry
-            threats.append("🛡️ BREAK-EVEN AKTYWNY (SL na wejsciu)")
-            actions.append("Przesun SL na cene wejscia — zero ryzyka.")
         sl_dist_left = td * (cur - stop)
         sl_rem_pct = round((sl_dist_left / sl_dist_total) * 100.0, 0)
 
@@ -171,8 +182,14 @@ def check_positions_guardian():
         # Sprawdzanie czy cena osiagnela kolejny cel TP 1R-5R
         for idx, tp_v in enumerate(p["tp"]):
             if not p["hit_tps"][idx] and ((side == "LONG" and cur >= tp_v) or (side == "SHORT" and cur <= tp_v)):
-                threats.append(f"🎯 OSIAGNIETO CEL TP {idx+1}R ({cp.fmt_p(tp_v).strip()})!")
-                actions.append(f"Zrealizuj 1/5 pozycji na gieldzie, przesun SL na Break-Even i odznacz TP{idx+1} w Portfelu.")
+                target_label = p.get("tp_r", [float(index + 1) for index in range(len(p["tp"]))])[idx]
+                target_weight = p.get("tp_weights", [1.0 / max(1, len(p["tp"]))] * len(p["tp"]))[idx]
+                threats.append(f"🎯 OSIAGNIETO CEL TP{idx+1} ({target_label}R, {target_weight:.0%}) ({cp.fmt_p(tp_v).strip()})!")
+                actions.append(f"Zrealizuj {target_weight:.0%} pozycji na gieldzie i odznacz TP{idx+1} w Portfelu.")
+                if idx == 0 and ((td == 1 and stop < entry) or (td == -1 and stop > entry)):
+                    p["stop"] = stop = entry
+                    p["be_entry_active"] = True
+                    actions.append("Przesuń SL na Break-Even po TP1.")
 
         status_line = " | ".join(threats) if threats else f"🟢 Pozycja stabilna ({struct}, RSI {ta['rsi']})"
         hp = cp.ds24.analyze_hold_potential(ex, sym, side, cur, p["tp"]) if hasattr(cp, "ds24") else {"verdict": "Brak danych", "eta_tp": "?"}

@@ -1,3 +1,5 @@
+import risk_guard_mod as rgm
+import time_decay_mod as tdm
 import report_24h_mod as r24
 import quant_edge_pro_mod as qep
 import nzt_cortex_mod as nzt
@@ -7,6 +9,7 @@ import future_quantum_mod as fqm
 import evolution_lab_mod as elm
 import ai_quant_mod as aqm
 import inst_orderflow_mod as iom
+STABLECOIN_BLACKLIST = {"BFUSD", "USDC", "USD1", "RLUSD", "FDUSD", "DAI", "TUSD", "USDE", "USDD", "PYUSD", "EURC"}
 # ==============================================================================
 # [AI_GUARD_AND_CONTEXT] - OBOWIAZKOWE ZASADY DLA KAZDEGO AI CZYTAJACEGO TEN PLIK:
 # 1. OBOWIAZEK KONTEKSTU: Przed wprowadzeniem jakichkolwiek zmian w kodzie
@@ -51,12 +54,15 @@ from decimal import Decimal, ROUND_DOWN
 from statistics import mean
 from flask import Flask, render_template_string, jsonify, redirect, url_for
 
-CONFIG_FILE, TG_CONFIG_FILE, SETTINGS_FILE, CSV_FILE = "config_live.json", "tg_config.json", "scanner_settings.json", "signals_history.csv"
+CONFIG_FILE, SETTINGS_FILE, CSV_FILE = "config_live.json", "scanner_settings.json", "signals_history.csv"
+TG_CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tg_config.json")
 EXCHANGES = ["BINANCE", "BYBIT", "BITGET", "WEEX", "BITBASE"]
 EX_MAX_DEV = {"BINANCE": 5.0, "BYBIT": 5.0, "BITGET": 5.0, "WEEX": 3.0, "BITBASE": 4.0}
 MAX_LEV, MAX_MARGIN_FRACTION, FEE_SIDE_PCT, SLIPPAGE_BPS = 100, 0.80, 0.05, 2.0
-LEVEL_CANDLES, STOP_ATR, NEAR_ATR, ATR_N, ADX_MIN, VOL_MULT = 48, 1.8, 1.8, 14, 20, 1.5
+LEVEL_CANDLES, STOP_ATR, NEAR_ATR, ATR_N, ADX_MIN, VOL_MULT = 48, 1.4, 1.8, 14, 20, 1.5
 WATCH_EVERY, TIMEOUT = 300, 15
+BITBASE_RISK_PCT = 1.5
+USER_OVERRIDES_FILE = "user_overrides.json"
 
 G, R, Y, C, B, W = "\033[92m", "\033[91m", "\033[93m", "\033[96m", "\033[1m", "\033[0m"
 sent_cooldown, watched_far = {}, {}
@@ -75,6 +81,199 @@ def load_settings():
 def save_settings(cfg):
     """Realizuje logike: save settings. Parametry: cfg."""
     with open(SETTINGS_FILE, "w") as f: json.dump(cfg, f)
+
+def get_bitbase_plan(hit, capital=None):
+    """Wylicza dane planu BitBase dla sygnału, bez wysyłania zlecenia."""
+    settings = load_settings()
+    account_capital = float(capital if capital is not None else settings.get("capital", 200.0))
+    return pm.calc_bitbase_plan(
+        hit.get("entry", 0),
+        hit.get("stop", 0),
+        hit.get("side", ""),
+        account_capital,
+        max_lev=1000,
+        risk_pct=BITBASE_RISK_PCT,
+        atr_value=hit.get("atr_value"),
+    )
+
+def get_pattern_match_summary(hit, history_rows=None):
+    """Zwraca historyczny win-rate podobnych setupów z danych zamkniętych."""
+    if history_rows is None:
+        history_rows = []
+        for history_file in (CFD_HIST_FILE, SHADOW_LAB_FILE):
+            if os.path.exists(history_file):
+                try:
+                    with open(history_file, encoding="utf-8") as history_stream:
+                        rows = json.load(history_stream)
+                except (OSError, json.JSONDecodeError) as err:
+                    print(f"PATTERN_MATCHER_DATA_ERR: {history_file}: {err}", flush=True)
+                    continue
+                if isinstance(rows, list):
+                    history_rows.extend(rows)
+
+    sample_atr = float(hit.get("atr_pct", 0) or 0)
+    sample_ema = float(hit.get("ema200_dist_pct", 0) or 0)
+    sample_hour = int(hit.get("hour", datetime.now().hour))
+    sample_btc = int(hit.get("btc_regime", 0) or 0)
+    sample_side = str(hit.get("side", "")).upper()
+    similar = []
+    for row in history_rows:
+        if not isinstance(row, dict) or not row.get("closed_final") or row.get("plan_version") != "BITBASE_3TP_V1":
+            continue
+        try:
+            row_btc = int(row.get("btc_regime", 0) or 0)
+            row_atr = float(row.get("atr_pct", row.get("sl_dist_pct", 0)) or 0)
+            row_ema = float(row.get("ema200_dist_pct", 0) or 0)
+            row_hour = int(row.get("hour", -24))
+        except (TypeError, ValueError):
+            continue
+        if str(row.get("side", "")).upper() != sample_side or row_btc != sample_btc:
+            continue
+        if sample_atr and abs(row_atr - sample_atr) > 0.5:
+            continue
+        if sample_ema and abs(row_ema - sample_ema) > 1.0:
+            continue
+        hour_gap = abs(row_hour - sample_hour)
+        if min(hour_gap, 24 - hour_gap) > 2:
+            continue
+        similar.append(row)
+    if len(similar) < 5:
+        return f"Próbka niewystarczająca ({len(similar)}/5)"
+    wins = sum(1 for row in similar if float(row.get("res_r", 0) or 0) - 0.07 > 0)
+    win_rate = round(100.0 * wins / len(similar))
+    return f"WR {win_rate}% ({wins}/{len(similar)} podobnych)"
+
+def load_user_overrides():
+    """Wczytuje ręczne edycje wyłącznie z user_overrides.json."""
+    if not os.path.exists(USER_OVERRIDES_FILE):
+        return {}
+    with open(USER_OVERRIDES_FILE, encoding="utf-8") as overrides_file:
+        data = json.load(overrides_file)
+    if not isinstance(data, dict):
+        raise ValueError("user_overrides.json must contain an object")
+    return data
+
+def save_user_override(symbol, original, edited, source_ts=None):
+    """Zapisuje oryginalny setup i ręczne poziomy wyłącznie do user_overrides.json."""
+    overrides = load_user_overrides()
+    source_epoch = int(source_ts or time.time())
+    overrides[f"{symbol}_{source_epoch}"] = {
+        "symbol": symbol,
+        "source_ts_epoch": source_epoch,
+        "updated_ts": int(time.time()),
+        "original": dict(original),
+        "edited": dict(edited),
+        "original_outcome": {"status": "OPEN", "res_r": None},
+        "edited_outcome": {"status": "OPEN", "res_r": None},
+    }
+    temp_path = USER_OVERRIDES_FILE + ".tmp"
+    with open(temp_path, "w", encoding="utf-8") as overrides_file:
+        json.dump(overrides, overrides_file, indent=2)
+    os.replace(temp_path, USER_OVERRIDES_FILE)
+
+def parse_user_override_levels(args, signal):
+    """Validates /edytuj levels and returns RR and ATR comparison metrics."""
+    if len(args) != 6 or str(args[0]).upper() != str(signal.get("symbol", "")).upper():
+        raise ValueError("użycie: /edytuj SYMBOL entry=... sl=... tp1=... tp2=... tp3=...")
+    values = {}
+    for item in args[1:]:
+        if "=" not in item:
+            raise ValueError("każdy poziom musi mieć format nazwa=wartość")
+        key, value = item.split("=", 1)
+        if key in values or key not in {"entry", "sl", "tp1", "tp2", "tp3"}:
+            raise ValueError("wymagane pola: entry, sl, tp1, tp2, tp3")
+        try:
+            values[key] = float(value)
+        except ValueError as err:
+            raise ValueError(f"niepoprawna wartość dla {key}") from err
+    if set(values) != {"entry", "sl", "tp1", "tp2", "tp3"}:
+        raise ValueError("wymagane pola: entry, sl, tp1, tp2, tp3")
+    if not all(math.isfinite(value) and value > 0 for value in values.values()):
+        raise ValueError("wszystkie poziomy muszą być dodatnimi liczbami")
+    side = str(signal.get("side", "")).upper()
+    ordered = (
+        side == "LONG" and values["sl"] < values["entry"] < values["tp1"] < values["tp2"] < values["tp3"]
+    ) or (
+        side == "SHORT" and values["sl"] > values["entry"] > values["tp1"] > values["tp2"] > values["tp3"]
+    )
+    if not ordered:
+        raise ValueError("poziomy są niepoprawne dla kierunku sygnału")
+    stop_pct = abs(values["entry"] - values["sl"]) / values["entry"] * 100.0
+    atr_value = float(signal.get("atr_value", 0) or 0)
+    stop_atr = abs(values["entry"] - values["sl"]) / atr_value if atr_value > 0 else None
+    rr = [round(abs(values[f"tp{index}"] - values["entry"]) / abs(values["entry"] - values["sl"]), 2) for index in range(1, 4)]
+    values["side"] = side
+    return values, rr, stop_pct, stop_atr
+
+def record_override_outcome(closed_row):
+    """Rejestruje równolegle wynik bazowego sygnału i edytowanego planu."""
+    overrides = load_user_overrides()
+    symbol = str(closed_row.get("sym", ""))
+    override = next(
+        (
+            value for key, value in overrides.items()
+            if key != "_meta" and isinstance(value, dict)
+            and value.get("symbol") == symbol
+            and value.get("source_ts_epoch") == closed_row.get("ts_epoch")
+        ),
+        None,
+    )
+    if override is None:
+        return
+    exit_price = float(closed_row.get("exit_price_f", 0) or 0)
+    original_r = float(closed_row.get("res_r", 0) or 0)
+    override["original_outcome"] = {"status": "CLOSED", "res_r": round(original_r - 0.07, 3)}
+    edited = override.get("edited", {})
+    side = str(edited.get("side", closed_row.get("side", ""))).upper()
+    entry, stop = float(edited.get("entry", 0) or 0), float(edited.get("sl", 0) or 0)
+    if exit_price > 0 and entry > 0 and stop > 0 and entry != stop and side in ("LONG", "SHORT"):
+        direction = 1 if side == "LONG" else -1
+        risk = abs(entry - stop)
+        favorable_r = direction * (exit_price - entry) / risk
+        targets = [float(edited.get(key, 0) or 0) for key in ("tp1", "tp2", "tp3")]
+        weights = (0.50, 0.30, 0.20)
+        if favorable_r < 0:
+            edited_r = max(-1.0, favorable_r)
+        else:
+            edited_r = sum(
+                weight * min(favorable_r, max(0.0, direction * (target - entry) / risk))
+                for weight, target in zip(weights, targets)
+                if target > 0
+            )
+        override["edited_outcome"] = {"status": "CLOSED", "res_r": round(edited_r - 0.07, 3)}
+    else:
+        override["edited_outcome"] = {"status": "CLOSED", "res_r": None}
+    temp_path = USER_OVERRIDES_FILE + ".tmp"
+    with open(temp_path, "w", encoding="utf-8") as overrides_file:
+        json.dump(overrides, overrides_file, indent=2)
+    os.replace(temp_path, USER_OVERRIDES_FILE)
+
+def maybe_send_user_override_summary(now=None):
+    """Wysyła dzienne porównanie wyniku bota i ręcznych edycji maksymalnie dwa razy."""
+    current = now or datetime.now()
+    slot = "08" if 8 <= current.hour < 9 else ("20" if 20 <= current.hour < 21 else "")
+    if not slot:
+        return False
+    overrides = load_user_overrides()
+    state_key = f"summary_{current.strftime('%Y-%m-%d')}_{slot}"
+    if not overrides or overrides.get("_meta", {}).get("last_summary") == state_key:
+        return False
+    rows = [value for key, value in overrides.items() if key != "_meta" and isinstance(value, dict)]
+    original_done = [row["original_outcome"]["res_r"] for row in rows if row.get("original_outcome", {}).get("res_r") is not None]
+    edited_done = [row["edited_outcome"]["res_r"] for row in rows if row.get("edited_outcome", {}).get("res_r") is not None]
+    original_total = round(sum(float(value) for value in original_done), 2)
+    edited_total = round(sum(float(value) for value in edited_done), 2)
+    overrides.setdefault("_meta", {})["last_summary"] = state_key
+    temp_path = USER_OVERRIDES_FILE + ".tmp"
+    with open(temp_path, "w", encoding="utf-8") as overrides_file:
+        json.dump(overrides, overrides_file, indent=2)
+    os.replace(temp_path, USER_OVERRIDES_FILE)
+    send_telegram(
+        f"📊 <b>PORÓWNANIE SETUPÓW ({slot}:00)</b>\n"
+        f"Bot: {len(original_done)} zamkniętych | suma {original_total:+.2f}R\n"
+        f"Edycje: {len(edited_done)} zamkniętych | suma {edited_total:+.2f}R"
+    )
+    return True
 
 def fmt_p(v):
     """Realizuje logike: fmt p. Parametry: v."""
@@ -99,7 +298,8 @@ def send_telegram(msg, kb=None):
     payload = {"chat_id": cid, "text": msg, "parse_mode": "HTML"}
     if kb: payload["reply_markup"] = kb
     try: requests.post(tg_url(tok, "sendMessage"), json=payload, timeout=4)
-    except Exception: pass
+    except Exception as err:
+        print("TELEGRAM_SEND_ERR:", str(err).replace(tok, "[REDACTED]"), flush=True)
 
 def log_to_csv(row):
     """Realizuje logike: log to csv. Parametry: row."""
@@ -302,33 +502,53 @@ def get_exchange_url(ex, sym):
 
 def format_tg_card(h, ex, tag=""):
     """Realizuje logike: format tg card. Parametry: h, ex, tag."""
-    tp1, tp2, tp3, tp4, tp5 = h["tp"]
-    ico = "🟢" if h["side"] == "LONG" else "🔴"
-    st = "TRIGGER" if h["is_trig"] else ("DALEKO" if not h["price_ok"] else "GOTOWY")
+    if "btc_regime" not in h:
+        h["btc_regime"] = get_live_btc_regime()[0] if "get_live_btc_regime" in globals() else 0
+    plan = get_bitbase_plan(h)
+    targets = plan["targets"] if plan else h.get("tp", [])[:3]
+    targets.extend([h.get("entry", 0)] * (3 - len(targets)))
+    tp1, tp2, tp3 = targets[:3]
+    group = "A" if h.get("win_prob", 0) >= 75 else ("B" if h.get("win_prob", 0) >= 60 else "C")
+    st = "TRIGG." if h.get("is_trig") else ("DALEKO" if not h.get("price_ok", True) else "GOTOWY")
+    status_icon = "🔴" if not h.get("price_ok", True) or group == "C" else ("🟡" if group == "B" or st == "TRIGG." else "🟢")
+    pattern = get_pattern_match_summary(h)
+    lev = f"{plan['leverage']}x" if plan else "n/a"
+    margin = f"${plan['margin']:.2f}" if plan else "n/a"
+    risk = f"${plan['risk_usdt']:.2f}" if plan else "n/a"
     return (
-        f"🚨 <b>{st}{tag} | {h['symbol']} ({ex})</b>\n"
-        f"{ico} Kierunek: <b>{h['side']}</b> | 💰 Min. Kap: <b>{h['req_cap']}$</b>\n"
+        f"{status_icon} <b>{st}{tag} | {h['symbol']} ({ex})</b> | Grupa {group} ({h.get('win_prob', 0)}%)\n"
+        f"Kierunek: <b>{h['side']}</b> | Status: <b>{st}</b>\n"
         f"📏 Dystans: <b>{h['dist_pct']:.2f}% ({h['dist_atr']:.2f} ATR)</b>" + (f" ⚠️ <b>Brakuje {h['gap_pct']}% do limitu {ex}!</b>" if not h.get("price_ok", True) else " ✅ <b>W limicie gieldy</b>") + "\n"
         f"⏱ Przebieg: <b>{h['mom']}</b> | Czas: <b>{h['eta_str']}</b>\n\n"
         f"📊 Cena teraz: <code>{fmt_p(h['price']).strip()}</code>\n"
         f"🎯 Wejście: <code>{fmt_p(h['entry']).strip()}</code>\n"
         f"🛑 Stop Loss: <code>{fmt_p(h['stop']).strip()}</code>\n"
-        f"───────────────\n"
-        f"✅ 1R: <code>{fmt_p(tp1).strip()}</code>  |  2R: <code>{fmt_p(tp2).strip()}</code>\n"
-        f"✅ 3R: <code>{fmt_p(tp3).strip()}</code>  |  4R: <code>{fmt_p(tp4).strip()}</code>\n"
-        f"🏆 5R: <code>{fmt_p(tp5).strip()}</code>"
+        f"🎯 TP1 (0.75R, 50%): <code>{fmt_p(tp1).strip()}</code>\n"
+        f"🎯 TP2 (1.5R, 30%): <code>{fmt_p(tp2).strip()}</code>\n"
+        f"🎯 TP3 (2.5R, 20%): <code>{fmt_p(tp3).strip()}</code>\n"
+        f"⚙️ LEV: <b>{lev}</b> | MARG: <b>{margin}</b> | Ryzyko: <b>{risk}</b>\n"
+        f"🧬 Pattern Matcher: <b>{pattern}</b>"
     )
 
 def _scan_one_coin(args):
     """Realizuje logike: scan one coin. Parametry: args."""
     ex, sym, price, rules, enabled, cap, rpct = args
+    base = sym.replace("USDT", "")
+    if base in STABLECOIN_BLACKLIST or any(sb == base for sb in STABLECOIN_BLACKLIST):
+        return None
     d1 = fetch_klines(ex, sym, "1d", 220)
     h4 = fetch_klines(ex, sym, "4h", 80)
     if not d1 or not h4: return None
     td = get_trend(h4["c"])
-    h1 = fetch_klines(ex, sym, "1h", 120)
+    h1 = fetch_klines(ex, sym, "1h", 210)
     if not h1 or get_trend(h1["c"]) == 0: return None
     td = get_trend(h1["c"])
+    cur_h = datetime.now().hour
+    if 8 <= cur_h < 13:
+        e200_1h = ema(h1["c"], 200)
+        if len(e200_1h) >= 200:
+            if (td == 1 and h1["c"][-1] < e200_1h[-1]) or (td == -1 and h1["c"][-1] > e200_1h[-1]):
+                return None
     m15 = fetch_klines(ex, sym, "15m", 70)
     if not m15: return None
 
@@ -358,7 +578,9 @@ def _scan_one_coin(args):
             return ("near", {"symbol": sym, "side": "LONG" if td == 1 else "SHORT", "price": price, "dist_atr": round(dist_atr, 2), "dist_pct": round(dist_pct, 2), "eta_str": eta_str, "mom": mom, "missing": ",".join(missing) or "Blisko wybicia"})
         return None
 
-    entry, stop_dist = (price if is_trig else level), STOP_ATR * atr_val
+    entry, stop_dist = (price if is_trig else level), min(STOP_ATR * atr_val, (price if is_trig else level) * 0.022)
+    if stop_dist < 1.2 * atr_val:
+        return None
     stop = entry - td * stop_dist
     tp = [entry + td * k * stop_dist for k in (1, 2, 3, 4, 5)]
     r_unit = stop_dist + ((FEE_SIDE_PCT/100.0) + (SLIPPAGE_BPS/10000.0)) * (entry + stop)
@@ -387,7 +609,9 @@ def _scan_one_coin(args):
     win_prob = max(42, min(92, prob))
     prob_tier = "🔥 WYSOKA (>=75%)" if win_prob >= 75 else ("✅ SOLIDNA (60-74%)" if win_prob >= 60 else "⚠️ RYZYKOWNA (<60%)")
 
-    return ("hit", {"win_prob": win_prob, "prob_tier": prob_tier, "adx": adx_val, "vol_r": vol_mult_val, "symbol": sym, "side": "LONG" if td == 1 else "SHORT", "is_trig": is_trig, "price_ok": price_ok, "gap_pct": gap_pct, "max_dev": max_d, "price": price, "entry": entry, "stop": stop, "tp": tp, "dist_atr": round(dist_atr, 2), "dist_pct": round(dist_pct, 2), "eta_str": eta_str, "mom": mom, "qty": qty, "notional": round(notional, 1), "lev": lev, "req_cap": req_cap, "dev_pct": dev_pct})
+    ema200_1h = ema(h1["c"], 200)
+    ema_dist_pct = (h1["c"][-1] - ema200_1h[-1]) / ema200_1h[-1] * 100.0 if len(ema200_1h) >= 200 and ema200_1h[-1] else 0.0
+    return ("hit", {"win_prob": win_prob, "prob_tier": prob_tier, "adx": adx_val, "vol_r": vol_mult_val, "symbol": sym, "side": "LONG" if td == 1 else "SHORT", "is_trig": is_trig, "price_ok": price_ok, "gap_pct": gap_pct, "max_dev": max_d, "price": price, "entry": entry, "stop": stop, "tp": tp, "dist_atr": round(dist_atr, 2), "dist_pct": round(dist_pct, 2), "eta_str": eta_str, "mom": mom, "qty": qty, "notional": round(notional, 1), "lev": lev, "req_cap": req_cap, "dev_pct": dev_pct, "atr_value": atr_val, "atr_pct": round(atr_val / price * 100.0, 4), "ema200_dist_pct": round(ema_dist_pct, 3), "hour": cur_h, "ts_epoch": int(time.time())})
 
 EX_COUNTS = {}
 
@@ -398,8 +622,8 @@ def get_dynamic_top_tiers(ex):
     try:
         syms, _, _ = get_market_meta(ex, 2000)
         if syms: EX_COUNTS[ckey] = len(syms)
-    except Exception:
-        pass
+    except Exception as err:
+        print(f"MARKET_META_ERR: {type(err).__name__}: {err}", flush=True)
     mx = EX_COUNTS.get(ckey, 65 if liq else 350)
     tiers = [x for x in (30, 100, 200) if x < mx]
     if mx not in tiers: tiers.append(mx)
@@ -626,7 +850,9 @@ def r_portfolio():
         tp_btns = ""
         for idx, (tp_val, is_hit) in enumerate(zip(p["tp"], p["hit_tps"])):
             bg = "#238636" if is_hit else "#21262d"
-            tp_btns += f'<a href="/hit_tp/{p["id"]}/{idx}" style="background:{bg};color:#fff;padding:4px 7px;border-radius:5px;text-decoration:none;font-size:11px;margin-right:4px">{"✅" if is_hit else "⬜"} {idx+1}R ({fmt_p(tp_val).strip()})</a>'
+            tp_r = p.get("tp_r", [float(index + 1) for index in range(len(p["tp"]))])[idx]
+            tp_weight = p.get("tp_weights", [1.0 / max(1, len(p["tp"]))] * len(p["tp"]))[idx]
+            tp_btns += f'<a href="/hit_tp/{p["id"]}/{idx}" style="background:{bg};color:#fff;padding:4px 7px;border-radius:5px;text-decoration:none;font-size:11px;margin-right:4px">{"✅" if is_hit else "⬜"} {tp_r}R ({tp_weight:.0%}) ({fmt_p(tp_val).strip()})</a>'
         rows_html += f"""<div class="card">
           <div style="display:flex;justify-content:space-between;align-items:center">
             <b>{p['symbol']} ({p['exchange']}) — <span style="color:{'#3fb950' if p['side']=='LONG' else '#f85149'}">{p['side']} {p['lev']}x</span></b>
@@ -663,9 +889,17 @@ def r_add_pos():
     sym = request.args.get("sym", "").strip().upper()
     cfg = load_settings(); ex = cfg["exchange"]
     hit = next((x for x in LATEST["hits"] if isinstance(x, dict) and x.get("symbol") == sym), None)
-    p = pm.calc_plan(ex, sym, cfg["capital"], cfg["risk_pct"], 20, hit["entry"] if hit else None, hit["stop"] if hit else None)
+    if hit:
+        bitbase_plan = get_bitbase_plan(hit, float(cfg.get("capital", 200.0)))
+        p = {
+            "side": bitbase_plan["side"], "entry": bitbase_plan["entry"], "stop": bitbase_plan["stop"],
+            "tp": bitbase_plan["targets"], "qty": bitbase_plan["qty"], "rec_margin": bitbase_plan["margin"],
+            "risk_usdt": bitbase_plan["risk_usdt"], "rec_lev": bitbase_plan["leverage"],
+        } if bitbase_plan else None
+    else:
+        p = pm.calc_plan(ex, sym, max(1000.0, float(cfg.get("capital", 200.0))), cfg["risk_pct"], 20)
     if p:
-        pf.add_position(ex, sym, p["side"], p["entry"], p["stop"], p["tp"], p["qty"], p["rec_margin"], p["risk_usdt"], p["rec_lev"])
+        pf.add_position(ex, sym, p["side"], p["entry"], p["stop"], p["tp"], p["qty"], p["rec_margin"], p["risk_usdt"], p["rec_lev"], tracked_as="OBSTAWIONE")
     return redirect(url_for("r_portfolio"))
 
 @app.route("/hit_tp/<pid>/<int:idx>")
@@ -781,26 +1015,29 @@ def log_cfd_hits_to_file(hits_list, src="LIVE"):
             sd_v = abs(en_v - sl_v) or (en_v * 0.01)
             sl_pct = round((sd_v / max(1e-9, en_v)) * 100.0, 2)
             td_v = 1 if h.get("side") == "LONG" else -1
-            tps_v = h.get("tp", [])
-            tp1_v = float(tps_v.__getitem__(0)) if len(tps_v) > 0 else round(en_v + td_v * sd_v * 1.0, 6)
-            tp2_v = float(tps_v.__getitem__(1)) if len(tps_v) > 1 else round(en_v + td_v * sd_v * 1.5, 6)
-            tp3_v = float(tps_v.__getitem__(2)) if len(tps_v) > 2 else round(en_v + td_v * sd_v * 2.5, 6)
+            plan = get_bitbase_plan(h)
+            tps_v = plan["targets"] if plan else h.get("tp", [])
+            tp1_v = float(tps_v[0]) if len(tps_v) > 0 else round(en_v + td_v * sd_v * 0.75, 6)
+            tp2_v = float(tps_v[1]) if len(tps_v) > 1 else round(en_v + td_v * sd_v * 1.5, 6)
+            tp3_v = float(tps_v[2]) if len(tps_v) > 2 else round(en_v + td_v * sd_v * 2.5, 6)
             mtf_str = apm.get_mtf_status_line("BITGET", h.get("symbol", ""), h.get("side", "LONG")) if "apm" in globals() else ""
             mtf_cnt = mtf_str.count("✅")
             cur_h.append({
-                "ts": now_s, "ts_epoch": now_ep, "hour": now_dt.hour, "src": src,
+                "ts": now_s, "ts_epoch": int(h.get("ts_epoch") or now_ep), "hour": int(h.get("hour", now_dt.hour)), "src": src,
                 "sym": h.get("symbol", ""), "side": h.get("side", ""),
                 "prob": h.get("win_prob", 75), "alpha_tag": h.get("alpha_tag", ""),
-                "btc_regime": btc_r, "session": sess_s, "mtf_cnt": mtf_cnt, "mtf_raw": mtf_str,
-                "sl_dist_pct": sl_pct, "tuner_prob": t_st.get("min_prob", 62), "tuner_sl_mult": t_st.get("sl_mult", 1.0),
+                "btc_regime": h.get("btc_regime", btc_r), "session": sess_s, "mtf_cnt": mtf_cnt, "mtf_raw": mtf_str,
+                "sl_dist_pct": sl_pct, "atr_pct": h.get("atr_pct", 0), "ema200_dist_pct": h.get("ema200_dist_pct", 0),
+                "plan_version": "BITBASE_3TP_V1",
+                "tuner_prob": t_st.get("min_prob", 62), "tuner_sl_mult": t_st.get("sl_mult", 1.0),
                 "entry": fmt_p(en_v).strip(), "sl": fmt_p(sl_v).strip(),
                 "en_f": en_v, "sl_f": sl_v, "tp1_f": tp1_v, "tp2_f": tp2_v, "tp3_f": tp3_v,
                 "status": "OPEN", "res_r": 0.0, "dur_str": "0m",
                 "mfe_r": 0.0, "mae_r": 0.0, "fail_reason": "PENDING", "closed_final": False
             })
         json.dump(cur_h.__getitem__(slice(-100, None)), open(CFD_HIST_FILE, "w"), indent=2)
-    except Exception:
-        pass
+    except Exception as err:
+        print(f"CFD_HISTORY_WRITE_ERR: {type(err).__name__}: {err}", flush=True)
 
 def fmt_dur_mins(mins):
     """Realizuje logike: fmt dur mins. Parametry: mins."""
@@ -858,18 +1095,24 @@ def audit_cfd_history_1m(hist_path=None):
 
             sl_hit = (lo <= cur_sl) if td == 1 else (hi >= cur_sl)
             if sl_hit:
-                if hit_tp2: final_st, final_r = "💰 BE+1.5R", 0.80
-                elif hit_tp1: final_st, final_r = "🟡 BE+1R", 0.50
+                if hit_tp2:
+                    final_st, final_r = ("💰 BE+TP2", 0.825) if r.get("plan_version") == "BITBASE_3TP_V1" else ("💰 BE+1.5R", 0.80)
+                elif hit_tp1:
+                    final_st, final_r = ("🟡 BE+TP1", 0.375) if r.get("plan_version") == "BITBASE_3TP_V1" else ("🟡 BE+1R", 0.50)
                 else: final_st, final_r = "❌ SL", -1.00
                 hit_idx = i
                 continue
 
-            if not hit_tp1 and ((hi >= tp1) if td == 1 else (lo <= tp1)): hit_tp1 = True
+            if not hit_tp1 and ((hi >= tp1) if td == 1 else (lo <= tp1)):
+                hit_tp1 = True
+                if r.get("plan_version") == "BITBASE_3TP_V1":
+                    cur_sl = en
             if not hit_tp2 and ((hi >= tp2) if td == 1 else (lo <= tp2)):
                 hit_tp2 = True
-                cur_sl = en + td * 0.1 * sd
+                cur_sl = en if r.get("plan_version") == "BITBASE_3TP_V1" else en + td * 0.1 * sd
             if (hi >= tp3) if td == 1 else (lo <= tp3):
-                final_st, final_r, hit_idx = "🏆 TP3", 2.00, i
+                final_r = 1.325 if r.get("plan_version") == "BITBASE_3TP_V1" else 2.00
+                final_st, hit_idx = "🏆 TP3", i
                 break
 
         r["mfe_r"], r["mae_r"] = max_fav_r, max_adv_r
@@ -882,6 +1125,8 @@ def audit_cfd_history_1m(hist_path=None):
                 reason = "COUNTER_BTC_FAIL"
             else: reason = "DIRECT_STOPOUT"
             r["status"], r["res_r"], r["dur_str"], r["fail_reason"], r["closed_final"] = final_st, final_r, fmt_dur_mins(dur_m), reason, True
+            r["exit_price_f"] = cur_sl if "BE" in final_st or final_st == "❌ SL" else tp3
+            record_override_outcome(r)
         else:
             c_last = float(kl1["c"].__getitem__(-1))
             live_r = round((td * (c_last - en)) / sd, 2)
@@ -979,34 +1224,381 @@ def tg_menu(cid=None, tok=None, notice=""):
 
 def tg_listener():
     """Realizuje logike: tg listener."""
-    if not os.path.exists(TG_CONFIG_FILE): return
-    cfg = json.load(open(TG_CONFIG_FILE))
-    tok, cid = cfg.get("token","").strip(), cfg.get("chat_id","").strip()
-    if not tok or not cid: return
-    tg_menu(cid, tok, "🤖 <b>System Gotowy!</b>\nChrome: <code>http://127.0.0.1:5000</code>")
+    global CFD_LIVE_ACTIVE, LIVE_ACTIVE
+    print(f"TG_LISTENER_START: script={os.path.abspath(__file__)} config={TG_CONFIG_FILE}", flush=True)
+    if not os.path.exists(TG_CONFIG_FILE):
+        print(f"TG_LISTENER_CONFIG_ERR: missing file: {TG_CONFIG_FILE}", flush=True)
+        return
+    try:
+        with open(TG_CONFIG_FILE, encoding="utf-8-sig") as config_file:
+            cfg = json.load(config_file)
+    except Exception as err:
+        print(f"TG_LISTENER_CONFIG_ERR: {type(err).__name__}", flush=True)
+        return
+    if not isinstance(cfg, dict) or not isinstance(cfg.get("token"), str) or not isinstance(cfg.get("chat_id"), str):
+        print("TG_LISTENER_CONFIG_ERR: token and chat_id must be strings", flush=True)
+        return
+    tok, cid = cfg["token"].strip(), cfg["chat_id"].strip()
+    if not tok or not cid:
+        print("TG_LISTENER_CONFIG_ERR: token or chat_id is empty", flush=True)
+        return
+    print("TG_LISTENER_CONFIG_OK: token and chat_id loaded; polling Telegram", flush=True)
+
+    def log_listener_error(context, error):
+        """Prints listener errors with the Telegram bot token redacted."""
+        detail = str(error).replace(tok, "[REDACTED]")
+        print(f"{context}: {detail}", flush=True)
+        return detail
+
+    def send_command_reply(message, text, reply_markup=None, parse_mode=None):
+        """Sends a checked command response to its originating Telegram chat."""
+        message_chat = message.get("chat") or {}
+        message_chat_id = message_chat.get("id")
+        if message_chat_id is None:
+            raise ValueError("Incoming message has no chat id")
+        payload = {"chat_id": message_chat_id, "text": text}
+        message_id = message.get("message_id")
+        if message_id is not None:
+            payload["reply_to_message_id"] = message_id
+        thread_id = message.get("message_thread_id")
+        if thread_id is not None:
+            payload["message_thread_id"] = thread_id
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
+        response = requests.post(tg_url(tok, "sendMessage"), json=payload, timeout=15)
+        result = response.json()
+        if not response.ok or not isinstance(result, dict) or not result.get("ok"):
+            error_code = result.get("error_code", response.status_code) if isinstance(result, dict) else response.status_code
+            description = result.get("description", "No description") if isinstance(result, dict) else "Invalid Telegram response"
+            raise RuntimeError(
+                f"sendMessage failed (HTTP {response.status_code}, Telegram {error_code}): {description}"
+            )
+
+    def add_signal_to_portfolio(symbol):
+        """Adds a signal to the local tracker without placing an exchange order."""
+        cfg_a = load_settings()
+        cap_a = max(0.0, float(cfg_a.get("capital", 200.0)))
+        planner_cap = max(1000.0, cap_a)
+        rpct_a = float(cfg_a.get("risk_pct", 1.5))
+        hit = next((x for x in LATEST.get("hits", []) if isinstance(x, dict) and x.get("symbol") == symbol), None)
+        plan = pm.calc_plan(
+            "BITGET",
+            symbol,
+            planner_cap,
+            rpct_a,
+            20,
+            hit["entry"] if hit else None,
+            hit["stop"] if hit else None,
+            hit["side"] if hit else None,
+        )
+        if not plan and hit:
+            distance = abs(hit["entry"] - hit["stop"]) or (hit["entry"] * 0.01)
+            risk_usdt = round(cap_a * (rpct_a / 100.0), 2)
+            qty = round(risk_usdt / distance, 4)
+            plan = {
+                "side": hit["side"],
+                "entry": hit["entry"],
+                "stop": hit["stop"],
+                "tp": hit.get(
+                    "tp",
+                    [hit["entry"] + (1 if hit["side"] == "LONG" else -1) * distance * multiple
+                     for multiple in (1.0, 1.5, 2.5, 3.5, 5.0)],
+                ),
+                "qty": qty,
+                "rec_margin": round((qty * hit["entry"]) / 10.0, 2),
+                "risk_usdt": risk_usdt,
+                "rec_lev": 10,
+            }
+        if hit:
+            bitbase_plan = get_bitbase_plan(hit, cap_a)
+            if bitbase_plan:
+                plan = {
+                    "side": bitbase_plan["side"],
+                    "entry": bitbase_plan["entry"],
+                    "stop": bitbase_plan["stop"],
+                    "tp": bitbase_plan["targets"],
+                    "qty": bitbase_plan["qty"],
+                    "rec_margin": bitbase_plan["margin"],
+                    "risk_usdt": bitbase_plan["risk_usdt"],
+                    "rec_lev": bitbase_plan["leverage"],
+                }
+        if not plan:
+            return None
+        pf.add_position(
+            "BITGET",
+            symbol,
+            plan["side"],
+            plan["entry"],
+            plan["stop"],
+            plan["tp"],
+            plan["qty"],
+            plan["rec_margin"],
+            plan["risk_usdt"],
+            plan["rec_lev"],
+            tracked_as="OBSTAWIONE",
+        )
+        summary = pf.get_portfolio_summary()
+        message_text = (
+            f"✅ Dodano <b>{symbol}</b> ({plan['side']}) do Portfela CFD!\n"
+            f"🔒 Margin: <b>{plan['rec_margin']}$</b> | "
+            f"⚠️ Ryzyko: <b>{plan['risk_usdt']}$</b> | "
+            f"🟢 Wolny limit: <b>{summary['free_margin']}$</b>"
+        )
+        keyboard = {"inline_keyboard": [
+            [{"text": "🛡️ SL i TP ustawione", "callback_data": f"pos_confirm_{symbol}"}],
+            [{"text": "✏️ Wpisz własne SL/TP", "callback_data": f"pos_edit_{symbol}"}],
+        ]}
+        return message_text, keyboard
+
+    try:
+        tg_menu(cid, tok, "🤖 <b>System Gotowy!</b>\nChrome: <code>http://127.0.0.1:5000</code>")
+    except Exception as err:
+        log_listener_error("TG_LISTENER_START_ERR", err)
     off = 0
     while True:
         try:
-            r = requests.get(tg_url(tok, "getUpdates"), params={"offset": off, "timeout": 15}, timeout=20).json()
+            response = requests.get(tg_url(tok, "getUpdates"), params={"offset": off, "timeout": 15}, timeout=20)
+            r = response.json()
+            if not response.ok or not r.get("ok"):
+                error_code = r.get("error_code", response.status_code)
+                description = r.get("description", "No description")
+                log_listener_error(
+                    "TG_LISTENER_API_ERR",
+                    f"getUpdates failed (HTTP {response.status_code}, Telegram {error_code}): {description}",
+                )
+                if str(error_code) in ("401", "403", "409"):
+                    return
+                time.sleep(2)
+                continue
             for u in r.get("result", []):
                 off = u["update_id"] + 1
-                if "message" in u: tg_menu(cid, tok)
-                elif "message" in u and "text" in u["message"]:
-                    mtxt = u["message"]["text"].strip().lower()
-                    if mtxt in ("/start", "start", "menu", "/menu"):
-                        tg_menu(cid, tok, "⚡ <b>PANEL CFD PRO — Gotowy!</b>")
+                if "message" in u:
+                    message = u["message"]
+                    incoming_chat_id = str((message.get("chat") or {}).get("id", "")).strip()
+                    if incoming_chat_id != cid:
+                        log_listener_error("TG_LISTENER_IGNORED_CHAT", "Incoming message does not match configured chat_id")
+                        continue
+                    message_text = message.get("text")
+                    parts = message_text.strip().split() if isinstance(message_text, str) else []
+                    command = parts[0].split("@", 1)[0].lower() if parts else ""
+                    args = parts[1:]
+                    if command == "/status":
+                        print("TG_LISTENER_STATUS: command received", flush=True)
+                        scan_state = f"w toku ({PROG.get('pct', 0)}%)" if PROG.get("running") else "bezczynny"
+                        last_scan = LATEST.get("ts") or LATEST.get("time", "Brak skanu")
+                        status_text = (
+                            "📊 STATUS CRYPTO PRO\n"
+                            f"Live CFD: {'ON' if CFD_LIVE_ACTIVE else 'OFF'}\n"
+                            f"Tryb Live: {'ON' if LIVE_ACTIVE else 'OFF'}\n"
+                            f"Skan: {scan_state}\n"
+                            f"Ostatni skan: {last_scan}\n"
+                            f"Trafienia: {len(LATEST.get('hits', []))}"
+                        )
+                        send_command_reply(message, status_text)
+                        print("TG_LISTENER_STATUS: reply delivered", flush=True)
+                    elif command == "/pause":
+                        LIVE_ACTIVE = False
+                        CFD_LIVE_ACTIVE = False
+                        pause_keyboard = {
+                            "inline_keyboard": [
+                                [
+                                    {"text": "▶ Tryb Live", "callback_data": "tgl_live"},
+                                    {"text": "⚡ Live CFD", "callback_data": "tgl_cfd_live"},
+                                ],
+                                [{"text": "⬅ Menu", "callback_data": "back_menu"}],
+                            ]
+                        }
+                        send_command_reply(
+                            message,
+                            "⏸️ Wstrzymano Tryb Live i automatyczny Live CFD. "
+                            "Skan ręczny pozostaje dostępny z menu.",
+                            pause_keyboard,
+                        )
+                    elif command == "/obstaw":
+                        signals = [
+                            hit for hit in LATEST.get("hits", [])
+                            if isinstance(hit, dict) and isinstance(hit.get("symbol"), str)
+                        ]
+                        if len(args) > 1:
+                            send_command_reply(message, "Użycie: /obstaw [SYMBOL]")
+                        elif args:
+                            requested_symbol = args[0].upper()
+                            signal = next(
+                                (hit for hit in signals if hit["symbol"].upper() == requested_symbol),
+                                None,
+                            )
+                            if signal is None:
+                                send_command_reply(
+                                    message,
+                                    "Brak aktywnego sygnału dla podanego symbolu. "
+                                    "Wyślij /obstaw bez argumentu, aby zobaczyć dostępne sygnały.",
+                                )
+                            else:
+                                try:
+                                    position_result = add_signal_to_portfolio(signal["symbol"])
+                                    if position_result is None:
+                                        send_command_reply(message, "Nie udało się wyliczyć planu dla tego sygnału.")
+                                    else:
+                                        position_text, position_keyboard = position_result
+                                        send_command_reply(
+                                            message,
+                                            position_text,
+                                            position_keyboard,
+                                            parse_mode="HTML",
+                                        )
+                                except Exception as err:
+                                    error_text = log_listener_error("TG_LISTENER_POSITION_ERR", err)
+                                    send_command_reply(message, f"Blad dodawania do portfela: {error_text}")
+                        elif not signals:
+                            send_command_reply(
+                                message,
+                                "Brak aktywnych sygnałów. Uruchom skan z menu i spróbuj ponownie.",
+                                {"inline_keyboard": [[{"text": "⚡ Skanuj CFD", "callback_data": "scan_cfd10"}]]},
+                            )
+                        else:
+                            signal_keyboard = {
+                                "inline_keyboard": [[
+                                    {
+                                        "text": f"✅ Obstawiłem {hit['symbol']}",
+                                        "callback_data": f"addp_{hit['symbol']}",
+                                    }
+                                ] for hit in signals[:8]]
+                            }
+                            send_command_reply(
+                                message,
+                                "Wybierz sygnał, aby dodać go do lokalnego trackera portfela. "
+                                "To nie wysyła zlecenia na giełdę.",
+                                signal_keyboard,
+                            )
+                    elif command == "/edytuj":
+                        settings = load_settings()
+                        if len(args) == 2 and args[0].lower() == "top_n":
+                            try:
+                                top_n = int(args[1])
+                            except ValueError:
+                                send_command_reply(message, "Użycie: /edytuj top_n <1-100>")
+                            else:
+                                if not 1 <= top_n <= 100:
+                                    send_command_reply(message, "top_n musi być liczbą od 1 do 100.")
+                                else:
+                                    settings["top_n"] = top_n
+                                    save_settings(settings)
+                                    send_command_reply(message, f"Zmieniono top_n na {top_n}.")
+                        elif len(args) == 2 and args[0].lower() == "liq_only":
+                            value = args[1].lower()
+                            if value in ("on", "true", "1", "tak"):
+                                settings["liq_only"] = True
+                            elif value in ("off", "false", "0", "nie"):
+                                settings["liq_only"] = False
+                            else:
+                                send_command_reply(message, "Użycie: /edytuj liq_only on|off")
+                                continue
+                            save_settings(settings)
+                            send_command_reply(
+                                message,
+                                f"Zmieniono filtrowanie płynności na {'ON' if settings['liq_only'] else 'OFF'}.",
+                            )
+                        elif len(args) == 6:
+                            symbol = args[0].upper()
+                            signal = next(
+                                (hit for hit in LATEST.get("hits", []) if isinstance(hit, dict) and hit.get("symbol", "").upper() == symbol),
+                                None,
+                            )
+                            if signal is None:
+                                send_command_reply(message, f"Brak aktywnego sygnału dla {symbol}.")
+                                continue
+                            try:
+                                edited, rr, stop_pct, stop_atr = parse_user_override_levels(args, signal)
+                            except ValueError as err:
+                                send_command_reply(
+                                    message,
+                                    f"Niepoprawne poziomy ({err}). Użycie: /edytuj SYMBOL entry=... sl=... tp1=... tp2=... tp3=...",
+                                )
+                                continue
+                            side = str(signal.get("side", "")).upper()
+                            source = {
+                                "side": side,
+                                "entry": signal["entry"],
+                                "sl": signal["stop"],
+                                "tp": (get_bitbase_plan(signal) or {}).get("targets", signal.get("tp", [])[:3]),
+                            }
+                            source_ts = signal.get("ts_epoch")
+                            save_user_override(symbol, source, edited, source_ts)
+                            atr_text = f"{stop_atr:.2f} ATR" if stop_atr is not None else "ATR niedostępne"
+                            range_warning = " — SL poza zakresem 1.2–1.6 ATR lub limitem 2.2%" if (
+                                stop_atr is None or not 1.2 <= stop_atr <= 1.6 or stop_pct > 2.2
+                            ) else ""
+                            send_command_reply(
+                                message,
+                                f"Zapisano edycję {symbol} wyłącznie w user_overrides.json.\n"
+                                f"R:R TP1/TP2/TP3: {rr[0]} / {rr[1]} / {rr[2]}\n"
+                                f"SL: {stop_pct:.2f}% ceny, {atr_text}{range_warning}.\n"
+                                "Historia bazowego sygnału i edycji będzie śledzona oddzielnie.",
+                            )
+                        else:
+                            send_command_reply(
+                                message,
+                                "Edytowalne ustawienia:\n"
+                                f"top_n: {settings.get('top_n', 30)}\n"
+                                f"liq_only: {'on' if settings.get('liq_only', True) else 'off'}\n\n"
+                                "Użycie:\n/edytuj top_n <1-100>\n/edytuj liq_only on|off",
+                            )
+                    elif command in ("/start", "/menu"):
+                        tg_menu(incoming_chat_id, tok, "⚡ <b>PANEL CFD PRO — Gotowy!</b>")
+                    elif command.startswith("/"):
+                        send_command_reply(
+                            message,
+                            "Nieznana komenda. Dostępne: /status, /pause, /obstaw, /edytuj, /start, /menu.",
+                        )
+                    else:
+                        tg_menu(incoming_chat_id, tok)
                 if "callback_query" in u:
-                    cb = u["callback_query"]["data"]
+                    callback = u["callback_query"]
+                    callback_message = callback.get("message") or {}
+                    callback_chat_id = str((callback_message.get("chat") or {}).get("id", "")).strip()
+                    if callback_chat_id != cid:
+                        log_listener_error("TG_LISTENER_IGNORED_CALLBACK", "Callback does not match configured chat_id")
+                        continue
+                    cb = callback.get("data", "")
                     requests.post(tg_url(tok, "answerCallbackQuery"), json={"callback_query_id": u["callback_query"]["id"]})
                     ex = load_settings()["exchange"]
                     if cb.startswith("plan_"):
                         psym = cb.replace("plan_", "").strip()
                         try:
                             cfg_p = load_settings()
-                            cap_p = max(1000.0, float(cfg_p.get("capital", 1000.0)))
+                            cap_p = max(0.0, float(cfg_p.get("capital", 200.0)))
+                            planner_cap_p = max(1000.0, cap_p)
                             rpct_p = float(cfg_p.get("risk_pct", 1.5))
                             hit = next((x for x in LATEST.get("hits", []) if isinstance(x, dict) and x.get("symbol") == psym), None)
-                            p = pm.calc_plan("BITGET", psym, cap_p, rpct_p, 20, hit["entry"] if hit else None, hit["stop"] if hit else None, hit["side"] if hit else None)
+                            if hit:
+                                bitbase_plan = get_bitbase_plan(hit, cap_p)
+                                if bitbase_plan:
+                                    target_text = "\n".join(
+                                        f"TP{index} ({multiple}R, {weight}%): <code>{fmt_p(value).strip()}</code>"
+                                        for index, (multiple, weight, value) in enumerate(
+                                            zip((0.75, 1.5, 2.5), (50, 30, 20), bitbase_plan["targets"]),
+                                            start=1,
+                                        )
+                                    )
+                                    sl_atr_text = f"{bitbase_plan['sl_atr']} ATR" if bitbase_plan["sl_atr"] is not None else "n/a"
+                                    plan_text = (
+                                        f"🧮 <b>BITBASE PLAN | {psym}</b>\n"
+                                        f"Kierunek: <b>{bitbase_plan['side']}</b> | Ryzyko: <b>{bitbase_plan['risk_pct']}% = ${bitbase_plan['risk_usdt']:.2f}</b>\n"
+                                        f"Wejście: <code>{fmt_p(bitbase_plan['entry']).strip()}</code> | SL: <code>{fmt_p(bitbase_plan['stop']).strip()}</code> "
+                                        f"({bitbase_plan['sl_pct']}%, {sl_atr_text})\n"
+                                        f"{target_text}\n"
+                                        f"LEV: <b>{bitbase_plan['leverage']}x</b> | MARG: <b>${bitbase_plan['margin']:.2f}</b>"
+                                    )
+                                    send_telegram(
+                                        plan_text,
+                                        {"inline_keyboard": [[{"text": f"✅ Obstawiłem {psym}", "callback_data": f"addp_{psym}"}]]},
+                                    )
+                                    continue
+                                send_telegram(f"⚠️ Nie można wyliczyć planu BitBase dla <b>{psym}</b>.")
+                                continue
+                            p = pm.calc_plan("BITGET", psym, planner_cap_p, rpct_p, 20, None, None, None)
                             if not p and hit:
                                 sd = abs(hit["entry"] - hit["stop"]) or (hit["entry"] * 0.01)
                                 risk_u = round(cap_p * (rpct_p / 100.0), 2)
@@ -1046,11 +1638,12 @@ def tg_listener():
                                     [{"text": f"📋 Wej: {e_s}", "callback_data": f"cpv_{e_s}"}, {"text": f"📋 SL: {sl_s}", "callback_data": f"cpv_{sl_s}"}],
                                     [{"text": f"📋 TP1: {t1_s}", "callback_data": f"cpv_{t1_s}"}, {"text": f"📋 TP2: {t2_s}", "callback_data": f"cpv_{t2_s}"}],
                                     [{"text": f"📋 TP3: {t3_s}", "callback_data": f"cpv_{t3_s}"}, {"text": f"📋 TP4: {t4_s}", "callback_data": f"cpv_{t4_s}"}, {"text": f"📋 TP5: {t5_s}", "callback_data": f"cpv_{t5_s}"}],
-                                    [{"text": f"➕ Obstawiam ({psym})", "callback_data": f"addp_{psym}"}, {"text": f"📈 Wykres ({psym})", "callback_data": f"ch_{psym}"}, {"text": "⬅ Menu", "callback_data": "back_menu"}]
+                                    [{"text": f"✅ Obstawiłem {psym}", "callback_data": f"addp_{psym}"}, {"text": f"📈 Wykres ({psym})", "callback_data": f"ch_{psym}"}, {"text": "⬅ Menu", "callback_data": "back_menu"}]
                                 ]}
                                 requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": msg_p, "parse_mode": "HTML", "reply_markup": kb_plan}, timeout=15)
                         except Exception as err:
-                            requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": f"⚠️ Blad Plannera: <code>{err}</code>", "parse_mode": "HTML"}, timeout=15)
+                            error_text = log_listener_error("TG_LISTENER_PLAN_ERR", err)
+                            requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": f"⚠️ Blad Plannera: <code>{error_text}</code>", "parse_mode": "HTML"}, timeout=15)
                     elif cb.startswith("cpv_"):
                         val_cp = cb.replace("cpv_", "").strip()
                         os.system(f'termux-clipboard-set "{val_cp}" >/dev/null 2>&1')
@@ -1067,36 +1660,31 @@ def tg_listener():
                         for p in sm["positions"]:
                             tps_str = "".join("✅" if x else "⬜" for x in p["hit_tps"])
                             txt_pf += f"\n\n📌 <b>{p['symbol']}</b> ({p['side']} {p['lev']}x) | Margin: {p['margin']}$ | {tps_str}"
-                            row = [{"text": f"TP{i+1}{'✅' if p['hit_tps'].__getitem__(i) else ''}", "callback_data": f"tp_{p['id']}_{i}"} for i in range(5)] + [{"text": "❌", "callback_data": f"rmp_{p['id']}"}]
+                            row = [{"text": f"TP{i+1}{'✅' if p['hit_tps'].__getitem__(i) else ''}", "callback_data": f"tp_{p['id']}_{i}"} for i in range(len(p["hit_tps"]))] + [{"text": "❌", "callback_data": f"rmp_{p['id']}"}]
                             kb_rows.append(row)
                         kb_rows.append([{"text": "⬅ Menu", "callback_data": "back_menu"}])
                         requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": txt_pf, "parse_mode": "HTML", "reply_markup": {"inline_keyboard": kb_rows}})
+                    elif cb.startswith("pos_confirm_"):
+                        psym = cb.replace("pos_confirm_", "").strip()
+                        send_telegram(f"🛡️ <b>{psym}</b>: pozycja jest oznaczona jako OBSTAWIONE i będzie monitorowana.")
+                    elif cb.startswith("pos_edit_"):
+                        psym = cb.replace("pos_edit_", "").strip()
+                        send_telegram(
+                            f"✏️ Edytuj poziomy dla <b>{psym}</b>:\n"
+                            f"<code>/edytuj {psym} entry=... sl=... tp1=... tp2=... tp3=...</code>"
+                        )
                     elif cb.startswith("addp_"):
                         asym = cb.replace("addp_", "").strip()
                         try:
-                            cfg_a = load_settings()
-                            cap_a = max(1000.0, float(cfg_a.get("capital", 1000.0)))
-                            rpct_a = float(cfg_a.get("risk_pct", 1.5))
-                            hit = next((x for x in LATEST.get("hits", []) if isinstance(x, dict) and x.get("symbol") == asym), None)
-                            p = pm.calc_plan("BITGET", asym, cap_a, rpct_a, 20, hit["entry"] if hit else None, hit["stop"] if hit else None, hit["side"] if hit else None)
-                            if not p and hit:
-                                sd = abs(hit["entry"] - hit["stop"]) or (hit["entry"] * 0.01)
-                                risk_u = round(cap_a * (rpct_a / 100.0), 2)
-                                qty_u = round(risk_u / sd, 4)
-                                p = {
-                                    "side": hit["side"], "entry": hit["entry"], "stop": hit["stop"],
-                                    "tp": hit.get("tp", [hit["entry"] + (1 if hit["side"]=="LONG" else -1)*sd*m for m in (1.0,1.5,2.5,3.5,5.0)]),
-                                    "qty": qty_u, "rec_margin": round((qty_u * hit["entry"]) / 10.0, 2),
-                                    "risk_usdt": risk_u, "rec_lev": 10
-                                }
-                            if p:
-                                pf.add_position("BITGET", asym, p["side"], p["entry"], p["stop"], p["tp"], p["qty"], p["rec_margin"], p["risk_usdt"], p["rec_lev"])
-                                sm = pf.get_portfolio_summary()
-                                send_telegram(f"✅ Dodano <b>{asym}</b> ({p['side']}) do Portfela CFD!\n🔒 Margin: <b>{p['rec_margin']}$</b> | ⚠️ Ryzyko: <b>{p['risk_usdt']}$</b> | 🟢 Wolny limit: <b>{sm['free_margin']}$</b>", {"inline_keyboard": [[{"text": "💼 Otworz Portfel CFD", "callback_data": "tg_pf"}, {"text": "⬅ Menu", "callback_data": "back_menu"}]]})
-                            else:
+                            position_result = add_signal_to_portfolio(asym)
+                            if position_result is None:
                                 send_telegram(f"⚠️ Nie udalo sie pobrac danych dla <b>{asym}</b>.")
+                            else:
+                                position_text, position_keyboard = position_result
+                                send_telegram(position_text, position_keyboard)
                         except Exception as err:
-                            send_telegram(f"⚠️ Blad dodawania do portfela: <code>{err}</code>")
+                            error_text = log_listener_error("TG_LISTENER_POSITION_ERR", err)
+                            send_telegram(f"⚠️ Blad dodawania do portfela: <code>{error_text}</code>")
                     elif cb.startswith("tp_"):
                         _, pid, tidx = cb.split("_"); pf.toggle_tp_hit(pid, int(tidx))
                         send_telegram(f"🎯 TP{int(tidx)+1} zaktualizowany! Kapital: <b>{pf.get_portfolio_summary()['capital']}$</b>")
@@ -1137,11 +1725,10 @@ def tg_listener():
                         nv = int(cb.replace("top_", "")); c = load_settings(); c["top_n"] = nv; save_settings(c)
                         tg_menu(cid, tok, f"✅ Ustawiono: <b>TOP {nv}</b>")
                     elif cb == "tgl_cfd_live":
-                        global CFD_LIVE_ACTIVE
                         CFD_LIVE_ACTIVE = not CFD_LIVE_ACTIVE
                         tg_menu(cid, tok, f"⚡ <b>Live CFD Auto-Skan (co 15 min): {'WLACZONY 🟢' if CFD_LIVE_ACTIVE else 'WYLACZONY ⚪'}</b>")
                     elif cb == "tgl_live":
-                        global LIVE_ACTIVE; LIVE_ACTIVE = not LIVE_ACTIVE
+                        LIVE_ACTIVE = not LIVE_ACTIVE
                         tg_menu(cid, tok, f"🔄 Tryb Live: <b>{'WLACZONY' if LIVE_ACTIVE else 'WYLACZONY'}</b>")
                     elif cb in ("chart_layers", "back_menu") or cb.startswith("tgl_"):
                         if cb == "back_menu": tg_menu(cid, tok)
@@ -1189,7 +1776,7 @@ def tg_listener():
                                 f"💵 Cena: <code>{h['price']}</code> | 🎯 Wejscie: <code>{h['entry']}</code>\n"
                                 f"🛑 SL: <code>{h['stop']}</code> | ✅ TP1 (1R): <code>{tp1}</code> | 💰 TP2 (1.5R): <code>{tp2}</code>\n{apm.get_mtf_status_line('BITGET', h['symbol'], h['side'])}\n{pf.check_new_opportunity_margin(h['side'])}"
                             )
-                            kb_c = {"inline_keyboard": [[{"text": f"🧮 Plan ({h['symbol']})", "callback_data": f"plan_{h['symbol']}"}, {"text": f"➕ Obstawiam", "callback_data": f"addp_{h['symbol']}"}, {"text": f"📈 Wykres", "callback_data": f"ch_{h['symbol']}"}]]}
+                            kb_c = {"inline_keyboard": [[{"text": f"🧮 Plan ({h['symbol']})", "callback_data": f"plan_{h['symbol']}"}, {"text": f"✅ Obstawiłem {h['symbol']}", "callback_data": f"addp_{h['symbol']}"}, {"text": f"📈 Wykres", "callback_data": f"ch_{h['symbol']}"}]]}
                             requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": card_t, "parse_mode": "HTML", "reply_markup": kb_c}, timeout=15)
                     elif cb == "scan_cfd10":
                         kb_stop = {"inline_keyboard": [[{"text": "🛑 STOP / Reset Skanu", "callback_data": "scan_stop"}]]}
@@ -1250,19 +1837,19 @@ def tg_listener():
                                             pct = int((done_c / tot_c) * 100)
                                             bar = "█" * (pct // 10) + "░" * (10 - pct // 10)
                                             try: requests.post(tg_url(tok, "editMessageText"), json={"chat_id": cid, "message_id": mid, "text": f"⚡ <b>Skan CFD TOP-100 (12x Turbo):</b> ({done_c}/{tot_c})\n<code>[{bar}] {pct}%</code>", "parse_mode": "HTML", "reply_markup": kb_stop}, timeout=4)
-                                            except Exception: pass
+                                            except Exception as err: log_listener_error("TG_LISTENER_SCAN_PROGRESS_ERR", err)
                                         res_h = fut.result()
                                         if res_h: hits.append(res_h)
                                 if SCAN_STOP:
                                     if mid:
                                         try: requests.post(tg_url(tok, "editMessageText"), json={"chat_id": cid, "message_id": mid, "text": "🛑 <b>Skanowanie przerwane i zresetowane!</b>", "parse_mode": "HTML"}, timeout=4)
-                                        except Exception: pass
+                                        except Exception as err: log_listener_error("TG_LISTENER_SCAN_STOP_ERR", err)
                                     return
                                 if mid:
                                     try:
                                         requests.post(tg_url(tok, "editMessageText"), json={"chat_id": cid, "message_id": mid, "text": "✅ <b>Skan CFD TOP-100 zakonczony!</b>\n<code>[██████████] 100%</code>", "parse_mode": "HTML"}, timeout=15)
-                                    except Exception:
-                                        pass
+                                    except Exception as err:
+                                        log_listener_error("TG_LISTENER_SCAN_COMPLETE_ERR", err)
                                 btc_cm = str(btc_lbl).replace("<", "&lt;").replace(">", "&gt;")
                                 if not hits:
                                     nh_txt = f"⠀⠀🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥\n⛔ <b>BRAK AKTYWNYCH SYGNAŁÓW</b> ⛔\n⠀⠀🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥\n⚡ <b>CFD TOP-100</b> ({btc_cm})\nBrak czystego wejscia w tym kwadransie (próg Auto-Tunera: <b>{min_p_dyn}%</b>). Czekamy na impuls bez otwierania pozycji na sile."
@@ -1274,21 +1861,15 @@ def tg_listener():
                                     log_cfd_hits_to_file(top3_m, "SKAN")
                                     requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": f"⠀⠀🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n✅ <b>SĄ AKTYWNE OKAZJE!</b> ✅\n⠀⠀🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n⚡ <b>SYGNALY CFD TOP-100</b> | {btc_cm}\nZnaleziono <b>{len(top3_m)}</b> najlepsze okazje:", "parse_mode": "HTML"}, timeout=15)
                                     for h in top3_m:
-                                        tps_m = h.get("tp", [])
-                                        tp1_m = tps_m.__getitem__(0) if len(tps_m) > 0 else h["entry"]
-                                        tp2_m = tps_m.__getitem__(1) if len(tps_m) > 1 else h["entry"]
-                                        card_m = (
-                                            f"⚡ <b>{h['symbol']}</b> — <b>{h['side']}</b>\n"
-                                            f"🎯 Szansa kontynuacji: <b>{h.get('win_prob', 75)}%</b> | 🧬 <i>{h.get('alpha_tag', 'FR OK')}</i>\n"
-                                            f"💵 Cena: <code>{h.get('price', h['entry'])}</code> | 🎯 Wejscie: <code>{h['entry']}</code>\n"
-                                            f"🛑 SL: <code>{h['stop']}</code> | ✅ TP1: <code>{tp1_m}</code> | 💰 TP2: <code>{tp2_m}</code>\n"
-                                            f"{apm.get_mtf_status_line('BITGET', h['symbol'], h['side'])}\n"
-                                            f"{pf.check_new_opportunity_margin(h['side'])}\n{sdm.build_action_instruction(h['symbol'], h['side'], h['entry'], h['stop'], tp1_m, h.get('is_trig', True))}"
-                                        )
-                                        kb_m = {"inline_keyboard": [[{"text": f"🧮 Plan ({h['symbol']})", "callback_data": f"plan_{h['symbol']}"}, {"text": "➕ Obstawiam", "callback_data": f"addp_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}, {"text": "🛡️ Audyt", "callback_data": f"aud_{h['symbol']}"}, {"text": "🚫 Brak BitBase", "callback_data": f"bbl_{h['symbol']}"}]]}
+                                        card_m = format_tg_card(h, "BITBASE")
+                                        kb_m = {"inline_keyboard": [
+                                            [{"text": f"✅ Obstawiłem {h['symbol']}", "callback_data": f"addp_{h['symbol']}"}],
+                                            [{"text": f"🧮 Plan ({h['symbol']})", "callback_data": f"plan_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}, {"text": "🛡️ Audyt", "callback_data": f"aud_{h['symbol']}"}],
+                                        ]}
                                         requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": card_m, "parse_mode": "HTML", "reply_markup": kb_m}, timeout=15)
                             except Exception as err:
-                                requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": f"⚠️ Blad skanu CFD: <code>{err}</code>", "parse_mode": "HTML"}, timeout=15)
+                                error_text = log_listener_error("TG_LISTENER_SCAN_ERR", err)
+                                requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": f"⚠️ Blad skanu CFD: <code>{error_text}</code>", "parse_mode": "HTML"}, timeout=15)
                         threading.Thread(target=bg_cfd10, daemon=True).start()
                     elif cb == "scan_now":
                         m = requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": f"⏳ <b>Skanuje {ex}...</b>", "parse_mode": "HTML"}).json()
@@ -1298,7 +1879,7 @@ def tg_listener():
                             hits_sorted = sorted(LATEST["hits"], key=lambda x: (-x.get("win_prob", 0), x["req_cap"]))
                             requests.post(tg_url(tok, "editMessageText"), json={"chat_id": cid, "message_id": mid, "text": f"✅ <b>Gotowe ({ex})!</b> Znaleziono: <b>{len(hits_sorted)}</b> (od najpewniejszej od gory) | W poblizu: <b>{len(LATEST['near'])}</b>", "parse_mode": "HTML"})
                             for idx, h in enumerate(hits_sorted, 1):
-                                kb_h = {"inline_keyboard": [[{"text": "➕ Obstawiam", "callback_data": f"addp_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}, {"text": "🛡️ Audyt", "callback_data": f"aud_{h['symbol']}"}, {"text": "🚫 Brak BitBase", "callback_data": f"bbl_{h['symbol']}"}, {"text": "🧮 Planner", "callback_data": f"plan_{h['symbol']}"}], [{"text": f"🌐 Otworz {ex} ({h['symbol']})", "url": get_exchange_url(ex, h['symbol'])}]]}
+                                kb_h = {"inline_keyboard": [[{"text": f"✅ Obstawiłem {h['symbol']}", "callback_data": f"addp_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}, {"text": "🧮 Planner", "callback_data": f"plan_{h['symbol']}"}], [{"text": f"🌐 Otworz {ex} ({h['symbol']})", "url": get_exchange_url(ex, h['symbol'])}]]}
                                 send_telegram(format_tg_card(h, ex, f" #{idx}"), kb_h)
                                 time.sleep(0.35)
                             if LATEST["near"]:
@@ -1330,11 +1911,12 @@ def tg_listener():
                                     cb_img = ds24.build_demo_chart_png(rep)
                                     if cb_img:
                                         requests.post(tg_url(tok, "sendPhoto"), data={"chat_id": cid, "caption": "📈 Wykres Symulacji PRO #2"}, files={"photo": ("pro.png", cb_img, "image/png")}, timeout=12)
-                                except Exception:
-                                    pass
+                                except Exception as err:
+                                    log_listener_error("TG_LISTENER_DEMO_PRO_CHART_ERR", err)
                                 requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": msg_p, "parse_mode": "HTML", "reply_markup": kb_p})
                         except Exception as err:
-                            send_telegram(f"⚠️ Blad Symulacji PRO: <code>{err}</code>")
+                            error_text = log_listener_error("TG_LISTENER_DEMO_PRO_ERR", err)
+                            send_telegram(f"⚠️ Blad Symulacji PRO: <code>{error_text}</code>")
                     elif cb == "demo_pro_new":
                         requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": "⏳ <b>Skanuje plynne pary (BYBIT) z filtrem rezimu BTC dla Symulacji PRO #2...</b>", "parse_mode": "HTML"})
                         def bg_pro():
@@ -1372,11 +1954,12 @@ def tg_listener():
                                     chart_b = ds24.build_demo_chart_png(rep)
                                     if chart_b:
                                         requests.post(tg_url(tok, "sendPhoto"), data={"chat_id": cid, "caption": f"📈 Wykres Symulacji 24H ({rep['exchange']})"}, files={"photo": ("sim.png", chart_b, "image/png")}, timeout=12)
-                                except Exception:
-                                    pass
+                                except Exception as err:
+                                    log_listener_error("TG_LISTENER_DEMO_CHART_ERR", err)
                                 requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": msg_d, "parse_mode": "HTML", "reply_markup": kb_d})
                         except Exception as err:
-                            send_telegram(f"⚠️ Blad podgladu symulacji: <code>{err}</code>")
+                            error_text = log_listener_error("TG_LISTENER_DEMO_24H_ERR", err)
+                            send_telegram(f"⚠️ Blad podgladu symulacji: <code>{error_text}</code>")
                     elif cb == "demo_24h_new":
                         requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": "⏳ <b>Tworze Symulacje 24H (1000$) z dopasowanych monet...</b>", "parse_mode": "HTML"})
                         def bg_d24():
@@ -1388,7 +1971,7 @@ def tg_listener():
                         threading.Thread(target=bg_d24, daemon=True).start()
                     elif cb == "demo_tg":
                         fill_demo()
-                        for d in LATEST["hits"]: send_telegram(format_tg_card(d, ex, " [DEMO]"), {"inline_keyboard": [[{"text": "➕ Obstawiam", "callback_data": f"addp_{d['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{d['symbol']}"}, {"text": "🧮 Planner", "callback_data": f"plan_{d['symbol']}"}]]})
+                        for d in LATEST["hits"]: send_telegram(format_tg_card(d, ex, " [DEMO]"), {"inline_keyboard": [[{"text": f"✅ Obstawiłem {d['symbol']}", "callback_data": f"addp_{d['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{d['symbol']}"}, {"text": "🧮 Planner", "callback_data": f"plan_{d['symbol']}"}]]})
                         tg_menu(cid, tok)
                     elif cb.startswith("ch_"):
                         sym = cb.replace("ch_", ""); buf, ta_info = cm.build_chart_buf(ex, sym)
@@ -1417,12 +2000,12 @@ def tg_listener():
                                 if mid and time.time() - st["t"] >= 1.5:
                                     st["t"] = time.time(); bar = "█"*(p//10) + "░"*(10 - p//10)
                                     try: requests.post(tg_url(tok, "editMessageText"), json={"chat_id": cid, "message_id": mid, "text": f"⏳ <b>{info}</b>\n<code>[{bar}] {p}%</code>", "parse_mode": "HTML", "reply_markup": {"inline_keyboard": [[{"text": "🛑 STOP / Reset", "callback_data": "bt_stop"}]]}}, timeout=5)
-                                    except Exception: pass
+                                    except Exception as err: log_listener_error("TG_LISTENER_BACKTEST_PROGRESS_ERR", err)
                             t20 = ["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","ADAUSDT","DOGEUSDT","AVAXUSDT","LINKUSDT","DOTUSDT","TRXUSDT","MATICUSDT","LTCUSDT","BCHUSDT","ATOMUSDT","UNIUSDT","NEARUSDT","APTUSDT","FILUSDT","INJUSDT"]
                             res = bt20.run_multi_backtest_2020(t20.__getitem__(slice(0, 10)), 2020, 1000.0, ub) if bsym=="M10" else (bt20.run_cfd_turbo_2020(apm.get_cfd_top60_symbols(), 2020, 1000.0) if bsym=="CFD" else (bt20.run_rotation_top3_2020(["BTCUSDT","DOTUSDT","LINKUSDT","TRXUSDT","ADAUSDT","DOGEUSDT","INJUSDT","BCHUSDT"], 2020, 1000.0) if bsym=="ROT3" else (bt20.run_multi_backtest_2020(t20, 2020, 1000.0, ub) if bsym=="M20" else bt20.run_backtest_2020(bsym, 2020, 1000.0, 1.0, ub))))
                             if mid:
                                 try: requests.post(tg_url(tok, "editMessageText"), json={"chat_id": cid, "message_id": mid, "text": f"✅ <b>Zakonczono analizę {bsym}!</b>\n<code>[██████████] 100%</code>", "parse_mode": "HTML"}, timeout=5)
-                                except Exception: pass
+                                except Exception as err: log_listener_error("TG_LISTENER_BACKTEST_COMPLETE_ERR", err)
                             if not res: send_telegram(f"⚠️ Brak danych dla {bsym}"); return
                             yr_l = "\n".join(f"• <b>{y}:</b> {v:+.2f}$" for y, v in sorted(res["yearly"].items()))
                             mo_l = "\n".join(f"• {k}: <b>{v:+.2f}$</b>" for k, v in sorted(res["monthly"].items()).__getitem__(slice(-12, None)))
@@ -1476,7 +2059,7 @@ def tg_listener():
                                     bars_u = "█" * (pct_u // 10) + "░" * (10 - pct_u // 10)
                                     try:
                                         requests.post(tg_url(tok, "editMessageText"), json={"chat_id": cid, "message_id": p_mid, "text": f"🚀 <b>Skanuję {tot_u} par (7 wzorców Pump & Dump)...</b>\n<code>[{bars_u}] {pct_u}%</code> ({done_u}/{tot_u})", "parse_mode": "HTML"}, timeout=10)
-                                    except Exception: pass
+                                    except Exception as err: log_listener_error("TG_LISTENER_PUMP_PROGRESS_ERR", err)
                         if not pd_hits:
                             requests.post(tg_url(tok, "sendMessage"), json={"chat_id": cid, "text": "⠀⠀🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥\n⛔ <b>BRAK AKTYWNYCH SYGNAŁÓW</b> ⛔\n⠀⠀🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥\n🚀 <b>Skan Pump & Dump (100% par na giełdzie)</b>\nSprawdzono rynek pod kątem <b>7 wzorców</b>:\n1️⃣ <i>Wybicie z bazy (BLZ/LOOM)</i> — skok vol &gt;4x na 1D\n2️⃣ <i>Blow-Off Top (TRB/CYBER)</i> — rajd &gt;100% + knot odrzucenia\n3️⃣ <i>Parabolic Rug Bleed (RAVE/OM)</i> — spadek po paraboli pod MA7/MA25\n4️⃣ <i>Flash Pump &amp; Dump (15M)</i> — szybka pompa &gt;8% i zrzut\n5️⃣ <i>Bot Ping-Pong</i> — równe słupki 50/50 + wybicie\n6️⃣ <i>Funding Squeeze</i> — ujemny funding &lt;-0.15%\n7️⃣ <i>Staircase Dump</i> — 5+ zielonych 1H + pierwsza czerwona", "parse_mode": "HTML"}, timeout=15)
                         else:
@@ -1507,26 +2090,33 @@ def tg_listener():
                     elif cb == "_old_csv":
                         lines = open(CSV_FILE).readlines().__getitem__(slice(-5, None)) if os.path.exists(CSV_FILE) else ["Pusto."]
                         send_telegram("<pre>" + "".join(lines) + "</pre>")
-        except Exception: time.sleep(2)
+        except Exception as err:
+            log_listener_error("TG_LISTENER_ERR", err)
+            time.sleep(2)
 
 def draw_box(title, col, rows):
     """Realizuje logike: draw box. Parametry: title, col, rows."""
     cols = max(48, shutil.get_terminal_size((52, 24)).columns)
     if cols >= 96:
-        w_s = max(5, cols - 1 - (5 + 6 + 56 + 4 + 13))
-        inn = w_s + 5 + 6 + 56 + 4 + 11
+        w_s = max(5, cols - 81)
+        inn = w_s + 79
         hdr = f"─ {title} ({len(rows)}) "
         print(f"\n{col}{B}┌{hdr}{'─'*max(1, inn-len(hdr))}┐{W}")
-        print(f"{col}│{W}{'MONETA':<{w_s}}{col}│{W}{'KIER':<5}{col}│{W}{'STATUS':<6}{col}│{W}{'CENA':>7}{col}│{W}{'WEJSCIE':>7}{col}│{W}{'SL':>7}{col}│{W}{'TP 1R':>7}{col}│{W}{'TP 2R':>7}{col}│{W}{'TP 3R':>7}{col}│{W}{'TP 4R':>7}{col}│{W}{'TP 5R':>7}{col}│{W}{'KAP':>4}{col}│{W}")
-        print(f"{col}├{'─'*w_s}┼─────┼──────┼───────┼───────┼───────┼───────┼───────┼───────┼───────┼───────┼────┤{W}")
+        print(f"{col}│{W}{'MONETA':<{w_s}}{col}│{W}{'KIER':<5}{col}│{W}{'STATUS':<6}{col}│{W}{'CENA':>7}{col}│{W}{'WEJSCIE':>7}{col}│{W}{'SL':>7}{col}│{W}{'TP.75R':>7}{col}│{W}{'TP1.5R':>7}{col}│{W}{'TP2.5R':>7}{col}│{W}{'KAP':>4}{col}│{W}{'LEV':>4}{col}│{W}{'MARG':>7}{col}│{W}")
+        print(f"{col}├{'─'*w_s}┼─────┼──────┼───────┼───────┼───────┼───────┼───────┼───────┼────┼────┼───────┤{W}")
         for h in rows:
             sym = h["symbol"].replace("USDT", "")[:w_s]
             kc = G if h["side"] == "LONG" else R
-            sc = f"{G}{B}" if h["is_trig"] else (R if not h.get("price_ok", True) else C)
+            sc = R if not h.get("price_ok", True) or h.get("win_prob", 0) < 60 else (Y if h.get("is_trig") or h.get("win_prob", 0) < 75 else G)
             st = "TRIGG." if h["is_trig"] else ("DALEKO" if not h.get("price_ok", True) else "GOTOWY")
-            t1, t2, t3, t4, t5 = [fmt_p(x).strip()[:7] for x in h["tp"]]
-            print(f"{col}│{W}{B}{sym:<{w_s}}{W}{col}│{W}{kc}{h['side']:<5}{W}{col}│{W}{sc}{st:<6}{W}{col}│{W}{fmt_p(h['price']).strip()[:7]:>7}{col}│{W}{fmt_p(h['entry']).strip()[:7]:>7}{col}│{W}{fmt_p(h['stop']).strip()[:7]:>7}{col}│{W}{t1:>7}{col}│{W}{t2:>7}{col}│{W}{t3:>7}{col}│{W}{t4:>7}{col}│{W}{t5:>7}{col}│{W}{col}{h['req_cap']:>3}${W}{col}│{W}")
-        print(f"{col}└{'─'*w_s}┴─────┴──────┴───────┴───────┴───────┴───────┴───────┴───────┴───────┴───────┴────┘{W}")
+            plan = get_bitbase_plan(h)
+            targets = plan["targets"] if plan else h.get("tp", [])[:3]
+            targets.extend([h.get("entry", 0)] * (3 - len(targets)))
+            t1, t2, t3 = [fmt_p(x).strip()[:7] for x in targets[:3]]
+            lev = f"{plan['leverage']}x" if plan else "n/a"
+            margin = f"{plan['margin']:.1f}" if plan else "n/a"
+            print(f"{col}│{W}{B}{sym:<{w_s}}{W}{col}│{W}{kc}{h['side']:<5}{W}{col}│{W}{sc}{st:<6}{W}{col}│{W}{fmt_p(h['price']).strip()[:7]:>7}{col}│{W}{fmt_p(h['entry']).strip()[:7]:>7}{col}│{W}{fmt_p(h['stop']).strip()[:7]:>7}{col}│{W}{t1:>7}{col}│{W}{t2:>7}{col}│{W}{t3:>7}{col}│{W}{col}{h['req_cap']:>3}${W}{col}│{W}{lev:>4}{col}│{W}{margin:>7}{col}│{W}")
+        print(f"{col}└{'─'*w_s}┴─────┴──────┴───────┴───────┴───────┴───────┴───────┴───────┴────┴────┴───────┘{W}")
     else:
         av = max(27, cols - 1 - 23)
         w_s = 6 + max(0, (av - 27) // 4); rem = av - w_s; wp = rem // 3; we = rem // 3; wsl = rem - wp - we
@@ -1538,14 +2128,21 @@ def draw_box(title, col, rows):
         for idx, h in enumerate(rows):
             sym = h["symbol"].replace("USDT", "")[:w_s]
             kc = G if h["side"] == "LONG" else R
-            sc = f"{G}{B}" if h["is_trig"] else (R if not h.get("price_ok", True) else C)
+            sc = R if not h.get("price_ok", True) or h.get("win_prob", 0) < 60 else (Y if h.get("is_trig") or h.get("win_prob", 0) < 75 else G)
             st = "TRIGG." if h["is_trig"] else ("DALEKO" if not h.get("price_ok", True) else "GOTOWY")
             print(f"{col}│{W}{B}{sym:<{w_s}}{W}{col}│{W}{kc}{h['side']:<5}{W}{col}│{W}{sc}{st:<6}{W}{col}│{W}{fmt_p(h['price']).strip()[:wp]:>{wp}}{col}│{W}{fmt_p(h['entry']).strip()[:we]:>{we}}{col}│{W}{fmt_p(h['stop']).strip()[:wsl]:>{wsl}}{col}│{W}{col}{h['req_cap']:>3}${W}{col}│{W}")
-            tps = [fmt_p(v).strip() for v in h["tp"]]
-            bw, rw = (inn - 4) // 5, (inn - 4) % 5
-            cw = [bw + (1 if j < rw else 0) for j in range(5)]
-            print(f"{col}├" + "┼".join(f"{'─'*((cw[j]-2)//2)}{C}{j+1}R{col}{'─'*(cw[j]-2-(cw[j]-2)//2)}" for j in range(5)) + f"┤{W}")
-            print(f"{col}│" + f"{col}│".join(f"{W}{C}{tps[j][:cw[j]]:^{cw[j]}}{W}" for j in range(5)) + f"{col}│{W}")
+            plan = get_bitbase_plan(h)
+            target_values = plan["targets"] if plan else h.get("tp", [])[:3]
+            target_values.extend([h.get("entry", 0)] * (3 - len(target_values)))
+            labels = ("0.75R", "1.5R", "2.5R")
+            tps = [fmt_p(value).strip() for value in target_values[:3]]
+            bw, rw = (inn - 4) // 3, (inn - 4) % 3
+            cw = [bw + (1 if j < rw else 0) for j in range(3)]
+            print(f"{col}├" + "┼".join(f"{'─'*((cw[j]-len(labels[j]))//2)}{C}{labels[j]}{col}{'─'*(cw[j]-len(labels[j])-(cw[j]-len(labels[j]))//2)}" for j in range(3)) + f"┤{W}")
+            print(f"{col}│" + f"{col}│".join(f"{W}{C}{tps[j][:cw[j]]:^{cw[j]}}{W}" for j in range(3)) + f"{col}│{W}")
+            if plan:
+                plan_line = f"LEV {plan['leverage']}x | MARG ${plan['margin']:.2f} | Ryzyko ${plan['risk_usdt']:.2f}"
+                print(f"{col}│{W}{plan_line:<{inn}}{col}│{W}")
             if idx < len(rows) - 1: print(f"{col}├{'─'*w_s}┼─────┼──────┼{'─'*wp}┼{'─'*we}┼{'─'*wsl}┼────┤{W}")
         print(f"{col}└{'─'*w_s}┴─────┴──────┴{'─'*wp}┴{'─'*we}┴{'─'*wsl}┴────┘{W}")
 
@@ -1557,7 +2154,7 @@ def draw_term():
     if not hits:
         print(f"{Y}  Brak aktywnych sygnalow (TRIGGER / GOTOWY) w tym cyklu.{W}")
     else:
-        tiers = [("🔥 GRUPA A: WYSOKA SZANSA NA ZYSK (>= 75%)", G, [x for x in hits if x.get("win_prob", 0) >= 75]), ("✅ GRUPA B: SOLIDNA SZANSA (60% - 74%)", C, [x for x in hits if 60 <= x.get("win_prob", 0) < 75]), ("⚠️ GRUPA C: PODWYZSZONE RYZYKO (< 60%)", Y, [x for x in hits if x.get("win_prob", 0) < 60])]
+        tiers = [("🔥 GRUPA A: WYSOKA SZANSA NA ZYSK (>= 75%)", G, [x for x in hits if x.get("win_prob", 0) >= 75]), ("✅ GRUPA B: SOLIDNA SZANSA (60% - 74%)", Y, [x for x in hits if 60 <= x.get("win_prob", 0) < 75]), ("⚠️ GRUPA C: PODWYZSZONE RYZYKO (< 60%)", R, [x for x in hits if x.get("win_prob", 0) < 60])]
         for t, col, grp in tiers:
             if grp: draw_box(t, col, grp)
     if not LATEST["near"]:
@@ -1604,8 +2201,7 @@ def fast_loop():
 def main():
     """Realizuje logike: main."""
     mode = sys.argv.__getitem__(1) if len(sys.argv) > 1 else ""
-    # Uruchamiamy w tle JEDNOCZESNIE: Bot Telegram, Szybki tracker DALEKO oraz Serwer WWW (Chrome)
-    threading.Thread(target=tg_listener, daemon=True).start()
+    # Uruchamiamy w tle JEDNOCZESNIE: Szybki tracker DALEKO oraz Serwer WWW (Chrome)
     threading.Thread(target=fast_loop, daemon=True).start()
     threading.Thread(target=auto_live_loop, daemon=True).start()
     threading.Thread(target=lambda: app.run(host="127.0.0.1", port=5000, threaded=True, debug=False), daemon=True).start()
@@ -1707,7 +2303,9 @@ def main():
                 print(f"Status: {sm['status']}")
                 for idx, p in enumerate(sm["positions"]):
                     tps_s = " ".join(f"{i+1}R:{'✅' if h else '⬜'}" for i, h in enumerate(p["hit_tps"]))
-                    print(f"  [{idx+1}] {B}{p['symbol']}{W} ({p['side']} {p['lev']}x) | Margin:{p['margin']}$ | {tps_s}")
+                    tracked_as = str(p.get("tracked_as", "NIEOBSTAWIONE"))
+                    tracked_color = G if tracked_as == "OBSTAWIONE" else Y
+                    print(f"  [{idx+1}] {B}{p['symbol']}{W} ({p['side']} {p['lev']}x) | {tracked_color}{tracked_as}{W} | Margin:{p['margin']}$ | {tps_s}")
                 cmd = input("Wpisz: +MONETA (dodaj), K <kwota> (zmien kapital), T <nr_poz> <1-5> (odznacz TP), D <nr_poz> (zamknij), 0 (powrot): ").strip().upper()
                 if cmd == "0": break
                 elif cmd.startswith("K "):
@@ -1741,27 +2339,39 @@ def main():
 
 
 
-def _append_lab_sample(lab_file, src_tag, sym, side, prob, pd_tag, en_v, sl_v):
-    """Realizuje logike: append lab sample. Parametry: lab_file, src_tag, sym, side, prob, pd_tag, en_v, sl_v."""
+def _append_lab_sample(lab_file, src_tag, sym, side, prob, pd_tag, en_v, sl_v, hit=None):
+    """Realizuje logike: append lab sample. Parametry: lab_file, src_tag, sym, side, prob, pd_tag, en_v, sl_v, hit."""
     try:
         arr = json.load(open(lab_file)) if os.path.exists(lab_file) else []
         now_dt = datetime.now()
         sd_v = abs(en_v - sl_v) or (en_v * 0.01)
         td_v = 1 if side == "LONG" else -1
-        arr.append({
+        plan = get_bitbase_plan(hit) if isinstance(hit, dict) else None
+        tp_values = plan["targets"] if plan else [
+            round(en_v + td_v * sd_v * multiple, 6) for multiple in (1.0, 1.5, 2.5)
+        ]
+        sample = {
             "ts": now_dt.strftime("%d.%m %H:%M"), "ts_epoch": int(time.time()), "hour": now_dt.hour,
             "data_type": "LIVE_FORWARD", "src": src_tag, "sym": sym, "side": side,
             "prob": prob, "pump_dump_tag": pd_tag or "NORMAL",
             "sl_dist_pct": round((sd_v / max(1e-9, en_v)) * 100.0, 2),
             "en_f": en_v, "sl_f": sl_v,
-            "tp1_f": round(en_v + td_v * sd_v * 1.0, 6),
-            "tp2_f": round(en_v + td_v * sd_v * 1.5, 6),
-            "tp3_f": round(en_v + td_v * sd_v * 2.5, 6),
+            "tp1_f": tp_values[0], "tp2_f": tp_values[1], "tp3_f": tp_values[2],
             "status": "OPEN", "res_r": 0.0, "dur_str": "0m", "mfe_r": 0.0, "closed_final": False
-        })
+        }
+        if isinstance(hit, dict):
+            btc_regime, _ = get_live_btc_regime() if "get_live_btc_regime" in globals() else (0, "NEUTRAL")
+            sample.update({
+                "plan_version": "BITBASE_3TP_V1",
+                "hour": int(hit.get("hour", now_dt.hour)),
+                "btc_regime": int(hit.get("btc_regime", btc_regime)),
+                "atr_pct": float(hit.get("atr_pct", 0) or 0),
+                "ema200_dist_pct": float(hit.get("ema200_dist_pct", 0) or 0),
+            })
+        arr.append(sample)
         json.dump(arr[-200:], open(lab_file, "w"), indent=2)
-    except Exception:
-        pass
+    except Exception as err:
+        print(f"MARKET_LAB_WRITE_ERR: {lab_file}: {type(err).__name__}: {err}", flush=True)
 
 def run_wild_market_probe():
     """Realizuje logike: run wild market probe."""
@@ -1818,10 +2428,26 @@ def cfd_live_bg_loop():
                     if tc_t.get("token") and tc_t.get("chat_id"):
                         requests.post(tg_url(tc_t["token"].strip(), "sendMessage"), json={"chat_id": tc_t["chat_id"].strip(), "text": f"🧠 <b>AUTO-TUNER CFD:</b>\n{tune_msg}", "parse_mode": "HTML"}, timeout=15)
                 min_p_l, sl_m_l = t_cfg.get("min_prob", 64), t_cfg.get("sl_mult", 1.0)
+                cur_h = datetime.now().hour
+                is_london = (8 <= cur_h < 13)
+                if is_london:
+                    min_p_l += int(t_cfg.get("london_prob_boost", 10))
                 def _live_w(sym_l):
                     try:
                         h = _scan_one_coin(("BITGET", sym_l, 1.0, load_settings().get("rules", {}), load_settings().get("enabled", ["15m", "1h", "4h", "1d"]), 1000.0, 1.5))
                         if h and isinstance(h, dict):
+                            h["btc_regime"] = btc_d
+                            h["hour"] = datetime.now().hour
+                            if is_london:
+                                kl_1h = fetch_klines("BITGET", h["symbol"], "1h", 210)
+                                if kl_1h and len(kl_1h["c"]) >= 200:
+                                    e200_1h = ema(kl_1h["c"], 200)[-1]
+                                    c1h = kl_1h["c"][-1]
+                                    if (h["side"] == "LONG" and c1h < e200_1h) or (h["side"] == "SHORT" and c1h > e200_1h):
+                                        return None
+                            ok_safe, _ = rgm.check_safe_lock_filter(h.get("win_prob", 55))
+                            if not ok_safe:
+                                return None
                             if sl_m_l != 1.0:
                                 td_l = 1 if h["side"] == "LONG" else -1
                                 h["stop"] = round(h["entry"] - td_l * abs(h["entry"] - h["stop"]) * sl_m_l, 6)
@@ -1851,7 +2477,9 @@ def cfd_live_bg_loop():
                                 for flg, nm in ((ok_ob, "OB_WALL"), (ok_k, "KNN"), (reg_k != "CHOP", "CHOP_SHIELD"), (ok_rt, "RED_TEAM"), (ok_nash, "NASH_TRAP")):
                                     if not flg: r24.record_funnel_drop(nm)
                             if ok_ob and ok_k and reg_k != "CHOP" and ok_rt and ok_nash and ok_tail and h["symbol"] not in sam.get_bitbase_blacklist() and sdm.check_sniper_quality(h["side"], btc_d, fetch_klines("BITGET", h["symbol"], "15m", 5))[0] and apm.validate_cfd_order(h["entry"], h["stop"], h["price"]) and h.get("win_prob", 0) >= 45:
-                                return h
+                                plan = get_bitbase_plan(h, float(load_settings().get("capital", 200.0)))
+                                if plan and plan.get("sl_atr") is not None and 1.2 <= plan["sl_atr"] <= 1.6 and plan["sl_pct"] <= 2.2:
+                                    return h
                     except Exception: pass
                     return None
                 with ThreadPoolExecutor(max_workers=12) as l_pool:
@@ -1861,17 +2489,16 @@ def cfd_live_bg_loop():
                             new_hits.append(h)
                 shadow_hits = [x for x in new_hits if x.get("win_prob", 0) < min_p_l]
                 for sh in shadow_hits[:4]:
-                    _append_lab_sample(SHADOW_LAB_FILE, f"SHADOW_T{sh.get('win_prob',50)}", sh["symbol"], sh["side"], sh.get("win_prob", 50), sh.get("alpha_tag", "SNIPER"), sh["entry"], sh["stop"])
+                    _append_lab_sample(SHADOW_LAB_FILE, f"SHADOW_T{sh.get('win_prob',50)}", sh["symbol"], sh["side"], sh.get("win_prob", 50), sh.get("alpha_tag", "SNIPER"), sh["entry"], sh["stop"], hit=sh)
                 audit_cfd_history_1m(SHADOW_LAB_FILE)
-                new_hits = [x for x in new_hits if x.get("win_prob", 0) >= min_p_l]
+                new_hits = [
+                    x for x in new_hits
+                    if x.get("win_prob", 0) >= max(min_p_l, 75) and x.get("price_ok", False)
+                ]
                 last_alert_ts = SEEN_CFD_SIGS.get("__LAST_ANY_ALERT__", 0)
-                if not new_hits and (time.time() - last_alert_ts) >= 21600:
-                    silver_cands = [x for x in shadow_hits if x.get("win_prob", 0) >= 53]
-                    if silver_cands:
-                        silver_cands.sort(key=lambda x: -x.get("win_prob", 0))
-                        best_s = dict(silver_cands[0])
-                        best_s["alpha_tag"] = "🥈 ANTY-PRZESTÓJ (SILVER 0.5x STAWKI) | " + best_s.get("alpha_tag", "")
-                        new_hits = [best_s]
+                maybe_send_user_override_summary()
+                tc_l = json.load(open(TG_CONFIG_FILE, encoding="utf-8-sig")) if os.path.exists(TG_CONFIG_FILE) else {}
+                tok_l, cid_l = tc_l.get("token", "").strip(), str(tc_l.get("chat_id", "")).strip()
                 if new_hits:
                     SEEN_CFD_SIGS["__LAST_ANY_ALERT__"] = time.time()
                 if new_hits:
@@ -1880,23 +2507,15 @@ def cfd_live_bg_loop():
                     log_cfd_hits_to_file(top3_live, "LIVE")
                     LATEST["hits"] = top3_live
                     LATEST["ts"] = datetime.now().strftime("%H:%M:%S (LIVE CFD)")
-                    tc_l = json.load(open(TG_CONFIG_FILE)) if os.path.exists(TG_CONFIG_FILE) else {}
-                    tok_l, cid_l = tc_l.get("token", "").strip(), tc_l.get("chat_id", "").strip()
                     if tok_l and cid_l:
                         btc_c = str(btc_lbl).replace("<", "&lt;").replace(">", "&gt;")
                         requests.post(tg_url(tok_l, "sendMessage"), json={"chat_id": cid_l, "text": f"⠀⠀🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n✅ <b>SĄ AKTYWNE OKAZJE!</b> ✅\n⠀⠀🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩\n🚨 <b>AUTO-ALERT CFD LIVE (15m)</b> | {btc_c}\nZnaleziono <b>{len(top3_live)}</b> swieze okazje:", "parse_mode": "HTML"}, timeout=15)
                         for h in top3_live:
-                            tps_l = h.get("tp", [])
-                            tp1_l = tps_l.__getitem__(0) if len(tps_l) > 0 else h["entry"]
-                            tp2_l = tps_l.__getitem__(1) if len(tps_l) > 1 else h["entry"]
-                            card_l = (
-                                f"⚡ <b>{h['symbol']}</b> — <b>{h['side']}</b> (LIVE)\n"
-                                f"🎯 Szansa kontynuacji: <b>{h.get('win_prob', 75)}%</b> | 🧬 <i>{h.get('alpha_tag', 'FR OK')}</i>\n"
-                                f"💵 Cena: <code>{h.get('price', h['entry'])}</code> | 🎯 Wejscie: <code>{h['entry']}</code>\n"
-                                f"🛑 SL: <code>{h['stop']}</code> | ✅ TP1: <code>{tp1_l}</code> | 💰 TP2: <code>{tp2_l}</code>\n"
-                                f"{apm.get_mtf_status_line('BITGET', h['symbol'], h['side'])}\n{pf.check_new_opportunity_margin(h['side'])}"
-                            )
-                            kb_l = {"inline_keyboard": [[{"text": f"🧮 Plan ({h['symbol']})", "callback_data": f"plan_{h['symbol']}"}, {"text": "➕ Obstawiam", "callback_data": f"addp_{h['symbol']}"}, {"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}, {"text": "🛡️ Audyt", "callback_data": f"aud_{h['symbol']}"}, {"text": "🚫 Brak BitBase", "callback_data": f"bbl_{h['symbol']}"}]]}
+                            card_l = format_tg_card(h, "BITBASE")
+                            kb_l = {"inline_keyboard": [
+                                [{"text": f"✅ Obstawiłem {h['symbol']}", "callback_data": f"addp_{h['symbol']}"}],
+                                [{"text": "📈 Wykres", "callback_data": f"ch_{h['symbol']}"}, {"text": "🛡️ Audyt", "callback_data": f"aud_{h['symbol']}"}],
+                            ]}
                             requests.post(tg_url(tok_l, "sendMessage"), json={"chat_id": cid_l, "text": card_l, "parse_mode": "HTML", "reply_markup": kb_l}, timeout=15)
                 else:
                     # Co 2 cykle (co 30 min) wysylamy cichy Puls Zycia, zeby bylo wiadomo ze radar CFD pracuje
@@ -1946,6 +2565,8 @@ def fast_active_positions_loop():
                 tc_g = json.load(open(TG_CONFIG_FILE)) if os.path.exists(TG_CONFIG_FILE) else {}
                 tok_g, cid_g = tc_g.get("token", "").strip(), tc_g.get("chat_id", "").strip()
                 for p in pos_list:
+                    if p.get("tracked_as") != "OBSTAWIONE":
+                        continue
                     pid = str(p.get("id", ""))
                     sym = p.get("symbol", "")
                     side = p.get("side", "LONG")
@@ -1958,8 +2579,8 @@ def fast_active_positions_loop():
                     if not kl: continue
                     cur = float(kl["c"].__getitem__(-1))
                     td = 1 if side == "LONG" else -1
-                    # 1. Sprawdzanie kolejnych progow TP1 .. TP5 co 60 sekund
-                    for idx_tp, tp_val in enumerate(tps.__getitem__(slice(0, 5))):
+                    # Check the BitBase scale-out targets once per minute.
+                    for idx_tp, tp_val in enumerate(tps):
                         tp_f = float(tp_val or 0)
                         if tp_f <= 0: continue
                         if idx_tp < len(hit_tps) and hit_tps.__getitem__(idx_tp): continue
@@ -1967,12 +2588,13 @@ def fast_active_positions_loop():
                         al_key = f"{pid}_TP{idx_tp+1}"
                         if reached and al_key not in ACTIVE_TP_ALERTS:
                             ACTIVE_TP_ALERTS.add(al_key)
-                            r_labels = ["1.0R", "1.5R (Break-Even!)", "2.5R", "3.5R", "5.0R"]
-                            rl = r_labels.__getitem__(idx_tp)
+                            r_labels = p.get("tp_r", [float(index + 1) for index in range(len(tps))])
+                            weights = p.get("tp_weights", [1.0 / max(1, len(tps))] * len(tps))
+                            rl = f"{r_labels[idx_tp]}R ({weights[idx_tp]:.0%})"
                             msg_tp = (
                                 f"🎯 <b>OSIAGNIETO TP{idx_tp+1} ({rl}) — {sym} ({side})!</b>\n"
                                 f"💵 Aktualna cena: <code>{fmt_p(cur).strip()}</code> | Cel TP{idx_tp+1}: <code>{fmt_p(tp_f).strip()}</code>\n"
-                                f"🛡️ <i>Jesli zlecenie na gieldzie nie zamknelo czesci pozycji (np. blad zera po przecinku), zrealizuj zysk recznie i przesun SL na Break-Even!</i>"
+                                f"🛡️ <i>TP1: zamknij 50% i przesuń SL na Break-Even; kolejne poziomy realizują 30% i 20%.</i>"
                             )
                             if tok_g and cid_g:
                                 kb_tp = {"inline_keyboard": [[{"text": f"✅ Oznacz TP{idx_tp+1} w Portfelu", "callback_data": f"tp_{pid}_{idx_tp}"}, {"text": "💼 Portfel CFD", "callback_data": "tg_pf"}]]}
@@ -2035,7 +2657,18 @@ def github_auto_sync_loop():
                 for f in glob.glob("*.py"):
                     py_compile.compile(f, doraise=True)
                 build_ai_context_bundle()
-                subprocess.run(["git", "add", "-f", "*.py", "*.md", ".gitignore"], check=False)
+                research_sync_files = [
+                    "*.py", "*.md", ".gitignore", "market_shadow_lab.json",
+                    "wild_market_lab.json", "micro_market_lab.json", "cfd_live_history.json",
+                    "qa_health_history.json", "tuner_state.json", "meta_brain_weights.json",
+                    "nzt_synapses.json", "evolution_champion.json", "raport_24h_dla_ai.txt",
+                    "risk_config.json", "time_decay_state.json", "PROJECT_MASTER.md"
+                ]
+                sync_list = []
+                for pat in research_sync_files:
+                    sync_list.extend(glob.glob(pat))
+                sync_list = sorted(set(sync_list) - {"tg_config.json", "active_positions.json"})
+                subprocess.run(["git", "add", "-f"] + sync_list, check=False)
                 subprocess.run(["git", "commit", "-m", f"Live-sync {datetime.now().strftime('%Y-%m-%d %H:%M')}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 r_p = subprocess.run(["git", "push", "origin", "main"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 if r_p.returncode == 0:
@@ -2068,11 +2701,13 @@ import sys, web_ui_mod
 web_ui_mod.register_web_ui(app, sys.modules[__name__], apm, atm, cam, wpr)
 
 if __name__ == "__main__":
+    print("Starting Telegram listener thread", flush=True)
+    threading.Thread(target=tg_listener, daemon=True).start()
     wd.register_worker('cfd_live_scanner', cfd_live_bg_loop)
     wd.register_worker('fast_guardian_60s', fast_active_positions_loop)
     wd.register_worker('github_sync_5m', github_auto_sync_loop)
     for k in wd.LIMITS_SEC: wd.beat(k, 'Start systemu')
-    build_ai_context_bundle()
+    threading.Thread(target=build_ai_context_bundle, daemon=True).start()
     threading.Thread(target=daily_healthcheck_loop, daemon=True).start()
     threading.Thread(target=github_auto_sync_loop, daemon=True).start()
     threading.Thread(target=cfd_live_bg_loop, daemon=True).start()
